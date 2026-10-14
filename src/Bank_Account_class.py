@@ -16,8 +16,6 @@ class InvalidOperationError(Exception):
 
 
 
-
-
 class AbstractAccount(ABC):
     VALID_STATUSES = ('active', 'frozen', 'closed')
     def __init__(self, name: str, surname: str, status: str = 'active'  )->None:
@@ -30,16 +28,16 @@ class AbstractAccount(ABC):
         self._account_status = status
        
     @abstractmethod
-    def deposit(self, amount:float)->None:
+    def deposit(self, limitoverdraft_limit:float)->None:
         if self._account_status == 'active':
-            self._balance += amount
+            self._balance += limitoverdraft_limit
         else :
             raise ValueError("Account is not active. Deposition is not permitied")
 
     @abstractmethod
-    def withdraw(self, amount:float)->None:
+    def withdraw(self, limitoverdraft_limit:float)->None:
         if self._account_status == 'active':
-            self._balance -= amount
+            self._balance -= limitoverdraft_limit
         else :
             raise ValueError("Account is not active. Withdrowal is not permitied")
 
@@ -68,27 +66,27 @@ class BankAccount(AbstractAccount):
         if self.currency not in self.CURRENCIES:
             raise ValueError ("Wrong currencie  input while creating an account")
         
-    def deposit(self, amount:float)->None:
+    def deposit(self, limitoverdraft_limit:float)->None:
         if self._account_status == 'closed':
             raise AccountClosedError('Closed account error')
         if self._account_status == 'frozen':
             raise AccountFrozenError('Frozen account error')
-        if amount <= 0:
-            raise InvalidOperationError("Negative or zero amount error")
-        if amount >0:
-            super().deposit(amount=amount)
+        if limitoverdraft_limit <= 0:
+            raise InvalidOperationError("Negative or zero limitoverdraft_limit error")
+        if limitoverdraft_limit >0:
+            super().deposit(limitoverdraft_limit=limitoverdraft_limit)
 
 
-    def withdraw(self, amount:float)->None:
+    def withdraw(self, limitoverdraft_limit:float)->None:
         if self._account_status == 'closed':
             raise AccountClosedError('Closed account error')
         if self._account_status == 'frozen':
             raise AccountFrozenError('Frozen account error')
-        if amount <= 0:
-            raise InvalidOperationError("Negative or zero amount error")
-        if self._balance < amount:
+        if limitoverdraft_limit <= 0:
+            raise InvalidOperationError("Negative or zero limitoverdraft_limit error")
+        if self._balance < limitoverdraft_limit:
             raise InsufficientFundsError("Not enought funds error ")
-        super().withdraw(amount=amount)
+        super().withdraw(limitoverdraft_limit=limitoverdraft_limit)
         
     def get_account_info(self)->dict:
         return {'name':self.name, 'surname':self.surname, 'type':'BankAccount','status':self._account_status, 'balance':self._balance, 'currency':self.currency,'uuid':str(self._uuid) }
@@ -110,16 +108,16 @@ class SavingsAccount(BankAccount):
         self.min_balance = min_balance
         self.month_interest = month_interest
 
-    def withdraw(self, amount:float, )->None:
+    def withdraw(self, limitoverdraft_limit:float, )->None:
         
-        if (self._balance - amount )< self.min_balance:
-            raise InvalidOperationError("Withdrowal amount higher then minimum allowed balance")
-        super().withdraw(amount=amount)
+        if (self._balance - limitoverdraft_limit )< self.min_balance:
+            raise InvalidOperationError("Withdrowal limitoverdraft_limit higher then minimum allowed balance")
+        super().withdraw(limitoverdraft_limit=limitoverdraft_limit)
 
     def apply_month_interest(self):
         current_balance = self._balance
-        increment_amount = current_balance * self.month_interest/100
-        super().deposit(amount=increment_amount)
+        increment_limitoverdraft_limit = current_balance * self.month_interest/100
+        super().deposit(limitoverdraft_limit=increment_limitoverdraft_limit)
   
 
 
@@ -131,21 +129,57 @@ class SavingsAccount(BankAccount):
             return info
     
 
-    
     def __str__(self)->str:
         parent_string = super().__str__()
         return (
             f'{parent_string},' 
             f'Min. balance: {self.min_balance},'
-            f'Monthly interest: {self.month_interest}%'
+            f'Monthly interest: {self.month_interest}'
         )
         
+
+class PremiumAccount(BankAccount):
+
+    """Savings Bank account with interest deposit and withdrowal operations
+    month interest should be in percents
+    """
+    def __init__(self, name: str, surname: str, 
+                   uuid:str | None = None, status: str = 'active', currency:str = 'RUB',
+                    overdraft_limit: float = 0,  )->None:
+        super().__init__(name=name, surname=surname, uuid=uuid, status=status, currency=currency)
+
+        
+        self.overdraft_limit = overdraft_limit
+        
+
+    def withdraw(self, limitoverdraft_limit:float, )->None:
+        
+        if (self._balance - limitoverdraft_limit )< self.overdraft_limit:
+            raise InvalidOperationError("Withdrowal limitoverdraft_limit exeeds overdraft limit")
+        super().withdraw(limitoverdraft_limit=limitoverdraft_limit)
+
+    
+  
+
+
+    def get_account_info(self)->dict:
+            info = super().get_account_info()
+            info['Overdraft limit'] = self.overdraft_limit
+            info['type'] = 'PremiumBankAccount'
+            return info
+    
+
+    def __str__(self)->str:
+        parent_string = super().__str__()
+        return (
+            f'{parent_string},' 
+            f'Overdraft limit: {self.overdraft_limit}'
+             )
+
         
         
         
         
-        
-        #return (f'Savings account, holder name: {self.surname}, {self.name}, uuid: {str(self._uuid)[-4:]},  status: {self._account_status}, type: {self.currency}, balance: {self._balance},  Min. allowed balance: {self.min_balance} ')        
 
 
 
