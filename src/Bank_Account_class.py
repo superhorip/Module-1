@@ -14,12 +14,30 @@ class AccountFrozenError(Exception):
 class InvalidOperationError(Exception):
     pass
 
+def validate_amount(amount: float, allow_zero: bool = False)->None:
+    '''
+    Check of amount for negative, None, float or int and non zero
+    '''
+    if isinstance(amount, bool) or not isinstance(amount, (float, int)):
+        raise TypeError('Amount  type erorrr')
+    if not math.isfinite(amount):
+        raise ValueError('Amount value should be finite number f')
+    if amount < 0:
+        raise ValueError('Amount should greater than zero')
+    if amount == 0 and not allow_zero:
+        raise ValueError('Amount value should not be zero ')
+
+
 
 
 
 class AbstractAccount(ABC):
     VALID_STATUSES = ('active', 'frozen', 'closed')
     def __init__(self, name: str, surname: str, status: str = 'active'  )->None:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Name should not be empty")
+        if not isinstance(surname, str) or not surname.strip():
+            raise ValueError("Surname should not be empty")
         self.name = name
         self.surname = surname
         self._balance = 0
@@ -55,29 +73,29 @@ class BankAccount(AbstractAccount):
     """Standart Bank account with deposit and withdrowal operations"""
 
     CURRENCIES = ('RUB', 'USD', 'EUR', 'KZT', 'CNY')
-    def __init__(self, name: str, surname: str, uuid:str | None = None, status: str = 'active', currency:str ='RUB'   )->None:
+    def __init__(self, name: str, surname: str, uuid: str | None = None, status: str = 'active', currency: str ='RUB')-> None:
         super().__init__(name=name, surname=surname, status=status)
-
-        if (uuid == 0 or uuid is None):
+         
+        if uuid is None:
             self._uuid = uuid4().hex[:12]
         else:
+            if not isinstance(uuid, str) or not uuid.strip():
+                raise ValueError("UUID must be a non-empty string")
             self._uuid = uuid
 
-        self.currency = currency
-        if self.currency not in self.CURRENCIES:
-            raise ValueError ("Wrong currencie  input while creating an account")
+
+        if not isinstance(currency, str) or not currency.strip():
+            raise ValueError("Currency must be a non-empty string")
+        if currency not in self.CURRENCIES:
+            raise ValueError ("Wrong currency  input while creating an account")
+        self._currency = currency
         
     def deposit(self, amount : float)->None:
         if self._account_status == 'closed':
             raise AccountClosedError('Closed account error')
         if self._account_status == 'frozen':
             raise AccountFrozenError('Frozen account error')
-        if isinstance(amount, bool) or not isinstance(amount,(float, int)):
-            raise TypeError('Amount should be int or float')
-        if not math.isfinite(amount):
-            raise ValueError('Value should ba finite number')        
-        if amount < 0:
-            raise InvalidOperationError("Negative or zero amount error")
+        validate_amount(amount=amount)
         super().deposit(amount = amount)
 
 
@@ -86,21 +104,16 @@ class BankAccount(AbstractAccount):
             raise AccountClosedError('Closed account error')
         if self._account_status == 'frozen':
             raise AccountFrozenError('Frozen account error')
-        if isinstance(amount, bool) or not isinstance(amount,(float, int)):
-            raise TypeError('Amount should be int or float')
-        if not math.isfinite(amount):
-            raise ValueError('Value should ba finite number')
-        if amount <= 0:
-            raise InvalidOperationError("Negative or zero amount error")
+        validate_amount(amount=amount)
         if self._balance < amount:
             raise InsufficientFundsError("Not enought funds error ")
         super().withdraw(amount = amount)
         
     def get_account_info(self)->dict:
-        return {'name':self.name, 'surname':self.surname, 'type':'BankAccount','status':self._account_status, 'balance':self._balance, 'currency':self.currency,'uuid':str(self._uuid) }
+        return {'name':self.name, 'surname':self.surname, 'type':'BankAccount','status':self._account_status, 'balance':self._balance, 'currency':self._currency,'uuid':str(self._uuid) }
     
     def __str__(self):
-        return (f'Bank account, holder name: {self.surname}, {self.name}, uuid: {str(self._uuid)[-4:]}, status: {self._account_status}, type: {self.currency}, balance: {self._balance} ')
+        return (f'Bank account, holder name: {self.surname}, {self.name}, uuid: {str(self._uuid)[-4:]}, status: {self._account_status}, type: {self._currency}, balance: {self._balance} ')
 
 
 
@@ -110,21 +123,17 @@ class SavingsAccount(BankAccount):
     month interest should be in percents
     """
     def __init__(self, name: str, surname: str,  min_balance: float = 20,
-                  month_interest: float = 0, uuid:str | None = None, status: str = 'active', currency:str = 'RUB'  )->None:
+                  month_interest: float = 0, uuid:str | None = None, status: str = 'active', currency: str = 'RUB'  )->None:
         super().__init__(name = name, surname = surname, uuid = uuid, status = status, currency = currency)
 
-        if min_balance < 0:
-            raise InvalidOperationError('Min balance should be positive')
+        validate_amount(amount=min_balance, allow_zero=True)
+        validate_amount(month_interest, allow_zero=True)
         self.min_balance = min_balance
         self.month_interest = month_interest
-        if self.month_interest <0:
-                    raise InvalidOperationError("Ineterest negative error")
+
 
     def withdraw(self, amount : float, )-> None:
-        if isinstance(amount, bool) or not isinstance(amount, (float, int)):
-            raise TypeError("Withdrowal amount should be float or int")
-        if not math.isfinite(amount):
-            raise ValueError('Value should ba finite number')
+        validate_amount(amount=amount)
         if (self._balance - amount ) < self.min_balance:
             raise InvalidOperationError("Withdrowal amount higher then minimum allowed balance")
         super().withdraw(amount = amount)
@@ -165,19 +174,12 @@ class PremiumAccount(BankAccount):
                     overdraft_limit: float = 0, bank_fee: float = 0, withdrawal_limit: float = 200 )->None:
         super().__init__(name=name, surname=surname, uuid=uuid, status=status, currency=currency)
 
-        if isinstance((overdraft_limit, withdrawal_limit), bool) or not isinstance((overdraft_limit, withdrawal_limit), (int, float)):
-            raise TypeError('Wrong type for overdraft_limit, withdrawal_limit the should be float or int')
-        if not math.isfinite(overdraft_limit):
-            raise ValueError('Overdraft_limit should be finit number')
-        if not math.isfinite(withdrawal_limit):
-            raise ValueError('withdrawal_limit should be finit number')        
-        if overdraft_limit < 0 or withdrawal_limit < 0:
-            raise InvalidOperationError ('Overdraft or withdrowal limit a less then zero')
         
+        validate_amount(amount = withdrawal_limit)
+        validate_amount(amount = overdraft_limit, allow_zero = True)
+        validate_amount(amount = bank_fee, allow_zero= True)
         self.overdraft_limit = overdraft_limit
         self.withdrawal_limit = withdrawal_limit
-        if(bank_fee < 0):
-            raise InvalidOperationError('Bank fee has negative value')
         self.bank_fee = bank_fee
 
 
@@ -187,12 +189,7 @@ class PremiumAccount(BankAccount):
             raise AccountClosedError('Closed account error')
         if self._account_status == 'frozen':
             raise AccountFrozenError('Frozen account error')
-        if isinstance(amount, bool) or not isinstance(amount,(float, int)):
-            raise TypeError('Amount should be int or float')
-        if not math.isfinite(amount):
-            raise ValueError('Value should ba finite number')
-        if amount <= 0:
-            raise InvalidOperationError("Negative or zero amount error")
+        validate_amount(amount=amount)
         if (amount > self.withdrawal_limit):
             raise InvalidOperationError("Withdrowal exeeds withdrowal limit")
         if (self._balance - amount - self.bank_fee ) < -1 * self.overdraft_limit:
@@ -236,13 +233,7 @@ class InvestmentAccount(BankAccount):
         '''
         Money -> Asset
         '''
-        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
-            raise TypeError("Amount must be int or float, but not bool")
-        if not isinstance(asset_name, str):
-            raise TypeError('AssestName should be str')
-        if not math.isfinite(amount):
-            raise ValueError('Value should ba finite number')        
-
+        validate_amount(amount=amount)
         if asset_name not in self.portfolio.keys():
             raise InvalidOperationError('No such asset in portfolio')
         if (amount > self._balance):
@@ -255,13 +246,7 @@ class InvestmentAccount(BankAccount):
         '''
         Assest -> money
         '''
-        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
-            raise TypeError("Amount must be int or float, but not bool")
-        if not isinstance(asset_name, str):
-            raise TypeError('AssestName should be str type')
-        if not math.isfinite(amount):
-            raise ValueError('Value should ba finite number')        
-
+        validate_amount(amount=amount)
         if asset_name not in self.portfolio.keys():
             raise InvalidOperationError('No such asset in portfolio')
         if (amount > self.portfolio[asset_name]):
@@ -303,7 +288,7 @@ class InvestmentAccount(BankAccount):
     def get_account_info(self)->dict:
             info = super().get_account_info()
             info['type'] = 'InvestmentBankAccount'
-            info['Assetes'] = self.portfolio
+            info['Assetes'] = self.portfolio.copy()
             return info
     
 
