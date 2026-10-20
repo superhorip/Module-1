@@ -37,7 +37,7 @@ print('\nDepositing 150 into active account')
 
 try:
     new_acc.deposit(150)
-except (BA.AccountClosedError, BA.AccountFrozenError, ValueError, TypeError) as e:
+except (BA.AccountClosedError, BA.AccountFrozenError, BA.InvalidOperationError) as e:
     print(f'Operation failed: {e}')
 
 print(new_acc)
@@ -49,7 +49,7 @@ print('\nTrying to deposit negative amount')
 
 try:
     new_acc.deposit(-150)
-except ValueError as e:
+except BA.InvalidOperationError as e:
     print(f'Operation failed: {e}')
 
 print(new_acc)
@@ -130,7 +130,7 @@ print(savings_acc)
 
 print('\nApplying monthly interest')
 
-savings_acc.apply_month_interest()
+savings_acc.apply_monthly_interest()
 print(savings_acc)
 
 
@@ -144,6 +144,19 @@ except BA.InvalidOperationError as e:
     print(f'Operation failed: {e}')
 
 print(savings_acc)
+
+# Trying to withdraw from frozen savings account
+
+frozen_savings = BA.SavingsAccount(name='John', surname='Doe', status='frozen')
+
+print('\nTrying to withdraw from frozen savings account')
+
+try:
+    frozen_savings.withdraw(100)
+except BA.AccountFrozenError as e:
+    print(f'Operation failed: {e}')
+
+print(frozen_savings)
 
 
 # Account information

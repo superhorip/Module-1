@@ -19,13 +19,13 @@ def validate_amount(amount: float, allow_zero: bool = False)->None:
     Check of amount for negative, None, float or int and non zero
     '''
     if isinstance(amount, bool) or not isinstance(amount, (float, int)):
-        raise TypeError('Amount  type erorrr')
+        raise InvalidOperationError('Amount  type erorrr')
     if not math.isfinite(amount):
-        raise ValueError('Amount value should be finite number f')
+        raise InvalidOperationError('Amount value should be finite number f')
     if amount < 0:
-        raise ValueError('Amount should greater than zero')
+        raise InvalidOperationError('Amount should greater than zero')
     if amount == 0 and not allow_zero:
-        raise ValueError('Amount value should not be zero ')
+        raise InvalidOperationError('Amount value should not be zero ')
 
 
 
@@ -35,30 +35,33 @@ class AbstractAccount(ABC):
     VALID_STATUSES = ('active', 'frozen', 'closed')
     def __init__(self, name: str, surname: str, status: str = 'active'  )->None:
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("Name should not be empty")
+            raise InvalidOperationError("Name should not be empty")
         if not isinstance(surname, str) or not surname.strip():
-            raise ValueError("Surname should not be empty")
+            raise InvalidOperationError("Surname should not be empty")
         self.name = name
         self.surname = surname
         self._balance = 0
         self._uuid = None
         if status not in self.VALID_STATUSES:
-            raise ValueError("Wrong status while creating bank account")
+            raise InvalidOperationError("Wrong status while creating bank account")
         self._account_status = status
        
     @abstractmethod
-    def deposit(self, amount:float)->None:
-        if self._account_status == 'active':
+    def deposit(self, amount:float)-> None:
+            self.check_account_status()
             self._balance += amount
-        else :
-            raise ValueError("Account is not active. Deposition is not permitied")
-
+        
     @abstractmethod
-    def withdraw(self, amount:float = 0)->None:
-        if self._account_status == 'active':
+    def withdraw(self, amount:float = 0)-> None:
+            self.check_account_status()
             self._balance -= amount
-        else :
-            raise ValueError("Account is not active. Withdrowal is not permitied")
+
+
+    def check_account_status(self)-> None:
+        if self._account_status == 'frozen':
+            raise AccountFrozenError('Account is frozen operations are not allowed')
+        if self._account_status == 'closed':
+            raise AccountClosedError('Account is closed operations are not allowed')
 
     @abstractmethod
     def get_account_info(self)->dict:
@@ -80,30 +83,24 @@ class BankAccount(AbstractAccount):
             self._uuid = uuid4().hex[:12]
         else:
             if not isinstance(uuid, str) or not uuid.strip():
-                raise ValueError("UUID must be a non-empty string")
+                raise InvalidOperationError("UUID must be a non-empty string")
             self._uuid = uuid
 
 
         if not isinstance(currency, str) or not currency.strip():
-            raise ValueError("Currency must be a non-empty string")
+            raise InvalidOperationError("Currency must be a non-empty string")
         if currency not in self.CURRENCIES:
-            raise ValueError ("Wrong currency  input while creating an account")
+            raise InvalidOperationError("Wrong currency  input while creating an account")
         self._currency = currency
         
     def deposit(self, amount : float)->None:
-        if self._account_status == 'closed':
-            raise AccountClosedError('Closed account error')
-        if self._account_status == 'frozen':
-            raise AccountFrozenError('Frozen account error')
+        self.check_account_status()
         validate_amount(amount=amount)
         super().deposit(amount = amount)
 
 
     def withdraw(self, amount : float)->None:
-        if self._account_status == 'closed':
-            raise AccountClosedError('Closed account error')
-        if self._account_status == 'frozen':
-            raise AccountFrozenError('Frozen account error')
+        self.check_account_status()
         validate_amount(amount=amount)
         if self._balance < amount:
             raise InsufficientFundsError("Not enought funds error ")
@@ -133,12 +130,14 @@ class SavingsAccount(BankAccount):
 
 
     def withdraw(self, amount : float, )-> None:
+        self.check_account_status()
         validate_amount(amount=amount)
         if (self._balance - amount ) < self.min_balance:
             raise InvalidOperationError("Withdrowal amount higher then minimum allowed balance")
         super().withdraw(amount = amount)
 
-    def apply_month_interest(self)->None:
+    def apply_monthly_interest(self)->None:
+        self.check_account_status()
         if self._balance == 0 or self.month_interest == 0:
             return
         amount = self._balance * self.month_interest/100
@@ -185,17 +184,12 @@ class PremiumAccount(BankAccount):
 
 
     def withdraw(self, amount : float)->None:
-        if self._account_status == 'closed':
-            raise AccountClosedError('Closed account error')
-        if self._account_status == 'frozen':
-            raise AccountFrozenError('Frozen account error')
+        self.check_account_status()
         validate_amount(amount=amount)
         if (amount > self.withdrawal_limit):
             raise InvalidOperationError("Withdrowal exeeds withdrowal limit")
         if (self._balance - amount - self.bank_fee ) < -1 * self.overdraft_limit:
             raise InvalidOperationError("Withdrowal exeeds overdraft limit")
-        if self._account_status != 'active':
-            raise ValueError("Account is not active. Withdrowal is not permitied")
         self._balance -= (amount + self.bank_fee)
        
 
@@ -233,6 +227,7 @@ class InvestmentAccount(BankAccount):
         '''
         Money -> Asset
         '''
+        self.check_account_status()
         validate_amount(amount=amount)
         if asset_name not in self.portfolio.keys():
             raise InvalidOperationError('No such asset in portfolio')
@@ -246,6 +241,7 @@ class InvestmentAccount(BankAccount):
         '''
         Assest -> money
         '''
+        self.check_account_status()
         validate_amount(amount=amount)
         if asset_name not in self.portfolio.keys():
             raise InvalidOperationError('No such asset in portfolio')
@@ -262,17 +258,17 @@ class InvestmentAccount(BankAccount):
         calculated_growth: float = 0
 
         if not isinstance(growth_rates, dict):
-            raise TypeError('Invalid type of groth rates it shlould be a dict')
+            raise InvalidOperationError('Invalid type of groth rates it shlould be a dict')
 
         for asset, value in growth_rates.items():
             if not isinstance (asset, str):
-                raise TypeError('Invalid type of asset it shlould be a str')
+                raise InvalidOperationError('Invalid type of asset it shlould be a str')
             if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise TypeError('Invalid type of asset it shlould be a foat or int')
+                raise InvalidOperationError('Invalid type of asset it shlould be a foat or int')
             if not math.isfinite(value):
-                raise ValueError('Value should ba finite number')          
+                raise InvalidOperationError('Value should ba finite number')          
             #if (value <= 0):    #. Rates can positive and negative. Markets are so unpredictable
-            #    raise ValueError("Value shoilud be positive and grater than zero")
+            #    raise InvalidOperationError("Value shoilud be positive and grater than zero")
 
         if growth_rates.keys() != self.portfolio.keys():
             raise InvalidOperationError("Asset types do not match portfolio")
@@ -283,6 +279,8 @@ class InvestmentAccount(BankAccount):
         return calculated_growth
             
     def withdraw(self, amount: float)-> None:
+        self.check_account_status()
+        validate_amount(amount=amount)
         super().withdraw(amount = amount)
 
     def get_account_info(self)->dict:
