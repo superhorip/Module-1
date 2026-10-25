@@ -14,7 +14,7 @@ class AccountFrozenError(Exception):
 class InvalidOperationError(Exception):
     pass
 
-def validate_amount(amount: float, allow_zero: bool = False)->None:
+def validate_amount(amount: float, allow_zero: bool = False)-> None:
     '''
     Check of amount for negative, None, float or int and non zero
     '''
@@ -27,7 +27,9 @@ def validate_amount(amount: float, allow_zero: bool = False)->None:
     if amount == 0 and not allow_zero:
         raise InvalidOperationError('Amount value should not be zero ')
 
-
+def validate_string(string: str, field_name: str)-> None:
+    if not isinstance(string, str) or not string.strip():
+        raise InvalidOperationError(f'{str(field_name)} should be a non-empty string type')
 
 
 
