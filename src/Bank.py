@@ -27,6 +27,59 @@ class Client():
             self._client_id = client_id
 
         self._uuids = []
+        self._isblocked = False
+        self._isauthentificated = False
+        self._is_verification_passed = False
+        self._num_of_login_attempts = 0
+        
+    
+    def is_client_blocked(self)-> bool:
+        return self._isblocked
+
+    def is_client_authentificated(self)->bool:
+        return self._isauthentificated
+
+    def block_unblock_client(self, block_client: bool):
+        '''
+        action to block_client -> Block if True, unblock if False
+        '''
+        if not isinstance(block_client, bool):
+            raise BA.InvalidOperationError('Flag chould bee Bool type')
+        if block_client:
+            self._isblocked = True
+            self._isauthentificated = False
+        else:
+            self._isblocked = False
+
+    def change_login_attempts(self, add_or_reset: bool):
+        '''
+        if add_or_reset, adds + 1 attempt if True, resets if False
+        '''
+        if not isinstance(add_or_reset, bool):
+            raise BA.InvalidOperationError('Flag chould bee Bool type')
+        
+        if add_or_reset:
+            if self._num_of_login_attempts == 3:
+                self.block_unblock_client(True)
+                raise BA.InvalidOperationError('Maximum login attemps reached client is blocked')
+            else:
+                self._num_of_login_attempts += 1
+        if not add_or_reset:
+            self._num_of_login_attempts = 0
+
+    def change_auth_status(self, authenthificate_or_not: bool):
+        '''
+        True means change change to auth, and False means change to not
+        '''
+        if not isinstance(authenthificate_or_not, bool):
+            raise BA.InvalidOperationError('Flag chould bee Bool type')
+        if authenthificate_or_not:
+            self._isauthentificated = True
+        else:
+            self._isauthentificated = False        
+
+
+
 
         
         
@@ -118,15 +171,35 @@ class Bank():
 
         self._all_bank_accounts[uuid_of_acc_to_unfreeze]._account_status = 'active'
 
-    def authenticate_client():
+    def authenticate_client(self, client_id: str, verification_passed: bool):
         ''' аутентификация, проверка. Не понимаю когда она выполняется? Нужен ли флаг что аутентификация выполнена когда происходят операции со счетом?
         Наверное да. Нужна ли аутентификация для add_client()
              🔒 3 неверные попытки входа = блокировка
 -            ⚠️ пометка подозрительных действий
 -            🌙 запрет операций с 00:00 до 05:00
         '''
+        BA.validate_string(string=client_id, field_name='Client id')
+        if not isinstance(verification_passed, bool):
+            raise BA.InvalidOperationError('Flag should be boool type')
 
-        pass
+        if self._all_clients[client_id].is_client_blocked():
+            raise BA.InvalidOperationError('Client is blocked operations are not allowed')
+        
+        if not verification_passed:
+            self._all_clients[client_id].change_login_attempts(True)
+        if verification_passed:
+            self._all_clients[client_id].change_login_attempts(add_or_reset=False)
+            self._all_clients[client_id].change_auth_status(True)
+
+
+        
+
+
+
+
+
+
+        
 
     def search_accounts():
         '''Поиск аккаунтов по имени или отчеству
@@ -138,32 +211,60 @@ class Bank():
         Расчет баланса банка по списку клиентов, если стоит флаг all_bank_clents то расчет идет по всем клинетам 
         и их счетам
         '''
-        bank_total_balance = 0
+        bank_total_balance = {'RUB' : 0, 'USD' : 0, 'EUR' : 0, 'KZT' : 0, 'CNY': 0}
         if not isinstance(all_bank_clients, bool):
             raise BA.InvalidOperationError('All bank clients var should be bool type')
         if all_bank_clients:
-            for client_id, client_ojb in self._all_clients.items():
-                for uuid in client_ojb._uuids:
-                    account_info = self._all_bank_accounts[uuid].get_account_info()
-                    if account_info['type'] == 'InvestmentBankAccount':
+            for client_id, client_obj in self._all_clients.items():
+                for uuid in client_obj._uuids:
+                    acc_currency = self._all_bank_accounts[uuid]._currency
+                    if isinstance(self._all_bank_accounts[uuid], BA.InvestmentAccount):
                         for _, amount in self._all_bank_accounts[uuid].portfolio.items():
-                            bank_total_balance = bank_total_balance + amount
-                    
-                    bank_total_balance = bank_total_balance + self._all_bank_accounts[uuid]._balance
-        return bank_total_balance
-        
+                            bank_total_balance[acc_currency] = bank_total_balance[acc_currency] + amount
+                    bank_total_balance[acc_currency] = bank_total_balance[acc_currency] + self._all_bank_accounts[uuid]._balance
+            return bank_total_balance
 
-
-
+        if not all_bank_clients:
+            if any(client_id not in self._all_clients for client_id in client_ids):
+                raise BA.InvalidOperationError('No such client in clients list')
+            for client_id in set(client_ids): #avoiding duplicates
+                for uuid in self._all_clients[client_id]._uuids:
+                    acc_currency = self._all_bank_accounts[uuid]._currency
+                    if isinstance(self._all_bank_accounts[uuid], BA.InvestmentAccount):
+                        for _, amount in self._all_bank_accounts[uuid].portfolio.items():
+                            bank_total_balance[acc_currency] = bank_total_balance[acc_currency] + amount
+                    bank_total_balance[acc_currency] = bank_total_balance[acc_currency] + self._all_bank_accounts[uuid]._balance
+            return bank_total_balance
+    
  
-        
 
-
-    def get_clients_ranking():
+    def get_clients_ranking(self, *client_ids: str, all_bank_clients: bool =True):
         ''' 
         Ранжирование клиентов по сумме активов
         '''
-        pass
+        if not isinstance(all_bank_clients, bool):
+            raise BA.InvalidOperationError('All bank clients var should be bool type')
+        if any(client_id not in self._all_clients for client_id in client_ids):
+            raise BA.InvalidOperationError('No such client in clients list')
+
+        clients_sum_balance: dict[str, float] = {}  # for storing clients balance and uuids
+        if all_bank_clients:
+            for client_id, _ in self._all_clients.items():
+                client_currencies_dict = self.get_total_balance(client_id, all_bank_clients=False)
+                client_total_sum = sum(client_currencies_dict.values())
+                clients_sum_balance[client_id] = client_total_sum
+
+        if not all_bank_clients:
+            for client_id in client_ids:
+                client_currencies_dict = self.get_total_balance(client_id, all_bank_clients=False)
+                client_total_sum = sum(client_currencies_dict.values())
+                clients_sum_balance[client_id] = client_total_sum
+
+        return sorted(clients_sum_balance.items(), key=lambda item: item[1], reverse=True)
+
+
+
+     
 
 
 
