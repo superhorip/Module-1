@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from uuid import uuid4
 import math
-import time
+from datetime import datetime
 
 import Bank_Account_class as BA
 
@@ -9,11 +9,13 @@ import Bank_Account_class as BA
 
 
 class Client():
-    def __init__(self, name: str, surname: str, age: int, client_id: str | None = None ):
+    def __init__(self, name: str, surname: str, age: int, phone_number: str, client_id: str | None = None ):
         BA.validate_string(string=name, field_name='Name')
         self._name = name
         BA.validate_string(string=surname, field_name='Surname')
         self._surname =surname
+        BA.validate_string(phone_number, field_name='Phone number')
+        self._phone_number = phone_number
         if not isinstance(age, int) or isinstance(age, bool):
             raise BA.InvalidOperationError('Age should be int type')
         if age < 18:
@@ -31,6 +33,7 @@ class Client():
         self._isauthentificated = False
         self._is_verification_passed = False
         self._num_of_login_attempts = 0
+        
         
     
     def is_client_blocked(self)-> bool:
@@ -53,14 +56,15 @@ class Client():
 
     def change_login_attempts(self, add_or_reset: bool):
         '''
-        if add_or_reset, adds + 1 attempt if True, resets if False
+        if add_or_reset, adds + 1 attempt if True, resets to zero if False
         '''
         if not isinstance(add_or_reset, bool):
             raise BA.InvalidOperationError('Flag chould bee Bool type')
         
         if add_or_reset:
-            if self._num_of_login_attempts == 3:
+            if self._num_of_login_attempts == 2:
                 self.block_unblock_client(True)
+                self._num_of_login_attempts = self._num_of_login_attempts + 1
                 raise BA.InvalidOperationError('Maximum login attemps reached client is blocked')
             else:
                 self._num_of_login_attempts += 1
@@ -69,6 +73,7 @@ class Client():
 
     def change_auth_status(self, authenthificate_or_not: bool):
         '''
+        Authentification means kinda auth throug password for bank app
         True means change change to auth, and False means change to not
         '''
         if not isinstance(authenthificate_or_not, bool):
@@ -89,17 +94,20 @@ class Bank():
 
         self._all_clients: dict[str, Client] = {} # Dict for storing clients [client_id, Client object]
         self._all_bank_accounts: dict[str, BA.BankAccount] = {} # Dict for storing all accounts [account_uuid, BankAcc object]
+        self._suspecious_actions: list[dict] = []
 
         
 
-    def add_client(self, name: str, surname: str, age: int)-> str:
+    def add_client(self, name: str, surname: str, age: int, phone_number: str)-> str:
         ''' 
         Создает клиента подтягивает данные из класса Client
         возвращет id созданного клиента
         '''
-        new_client = Client(name=name, surname=surname, age=age)
+        new_client = Client(name=name, surname=surname, age=age, phone_number=phone_number)
         self._all_clients[new_client._client_id] = new_client
         return new_client._client_id
+
+    
 
 
 
@@ -117,6 +125,7 @@ class Bank():
         if client_id not in self._all_clients.keys():
             raise BA.InvalidOperationError('No clients with such client ID exist')
         
+        self.check_security(client_id=client_id, action='Open')
         new_account = account_type(name= self._all_clients[client_id]._name,
                                         surname=self._all_clients[client_id]._surname,
                                         currency=currency,
@@ -137,6 +146,7 @@ class Bank():
             raise BA.InvalidOperationError('No Client with such ID')
         if uuid_of_acc_to_close not in self._all_clients[client_id]._uuids:
             raise BA.InvalidOperationError('Client does not have such account ID')
+        self.check_security(client_id=client_id, action='Close account')
 
         self._all_bank_accounts[uuid_of_acc_to_close]._account_status = 'closed'
 
@@ -153,6 +163,9 @@ class Bank():
         if uuid_of_acc_to_freeze not in self._all_clients[client_id]._uuids:
             raise BA.InvalidOperationError('Client does not have such account ID')
 
+        self.check_security(client_id=client_id, action='Freeze account')
+        if self._all_bank_accounts[uuid_of_acc_to_freeze]._account_status == 'closed':
+            raise BA.InvalidOperationError('Closed account coudnot be freezed')
         self._all_bank_accounts[uuid_of_acc_to_freeze]._account_status = 'frozen'
 
         
@@ -168,45 +181,86 @@ class Bank():
             raise BA.InvalidOperationError('No client with such ID')
         if uuid_of_acc_to_unfreeze not in self._all_clients[client_id]._uuids:
             raise BA.InvalidOperationError('Client does not have such account ID')
+        self.check_security(client_id=client_id, action='Unfreeze account')
 
+        if self._all_bank_accounts[uuid_of_acc_to_unfreeze]._account_status == 'closed':
+            raise BA.InvalidOperationError('Could not unfreeze closed account')
         self._all_bank_accounts[uuid_of_acc_to_unfreeze]._account_status = 'active'
 
+        
+
     def authenticate_client(self, client_id: str, verification_passed: bool):
-        ''' аутентификация, проверка. Не понимаю когда она выполняется? Нужен ли флаг что аутентификация выполнена когда происходят операции со счетом?
-        Наверное да. Нужна ли аутентификация для add_client()
-             🔒 3 неверные попытки входа = блокировка
--            ⚠️ пометка подозрительных действий
--            🌙 запрет операций с 00:00 до 05:00
+        ''' 
+
         '''
         BA.validate_string(string=client_id, field_name='Client id')
         if not isinstance(verification_passed, bool):
             raise BA.InvalidOperationError('Flag should be boool type')
+        if client_id not in self._all_clients:
+            raise BA.InvalidOperationError('No client with such ID')
 
-        if self._all_clients[client_id].is_client_blocked():
-            raise BA.InvalidOperationError('Client is blocked operations are not allowed')
+        self.check_security(client_id=client_id, action='Authentification procedure')
         
         if not verification_passed:
             self._all_clients[client_id].change_login_attempts(True)
+            self._all_clients[client_id].change_auth_status(False)
         if verification_passed:
             self._all_clients[client_id].change_login_attempts(add_or_reset=False)
             self._all_clients[client_id].change_auth_status(True)
 
 
-        
-
-
-
-
-
-
-        
-
-    def search_accounts():
-        '''Поиск аккаунтов по имени или отчеству
+    def check_allowed_time_interval(self)-> bool:
         '''
-        pass
+        Checks time when operations are not allowed
+        re
+        '''
+        current_hour = datetime.now().hour
+        if  0 <= current_hour < 5:
+            # raise BA.InvalidOperationError('Operations are not allowed for this time')
+            return False
+        else:
+            return True
 
-    def get_total_balance(self, *client_ids: str, all_bank_clients: bool =True):
+    def check_security(self, client_id: str, action: str):
+        BA.validate_string(string=client_id, field_name='Client ID')
+        BA.validate_string(string=action, field_name='Action name')
+        if client_id not in self._all_clients:
+            raise BA.InvalidOperationError('No client with such ID')
+        if self._all_clients[client_id]._isblocked:
+            self._suspecious_actions.append({'Client ID': client_id, 'Action': action, 'Reason':'Client is blocked', 'time': datetime.now() })
+            raise BA.InvalidOperationError('Client is blocked. No operations are allowed')
+        if not self.check_allowed_time_interval():
+            self._suspecious_actions.append({'Client ID': client_id, 'Action': action, 'Reason':'Night operations are not allowed', 'time': datetime.now() })
+            raise BA.InvalidOperationError('Night operations are not allowed')
+
+ 
+
+    def search_accounts(self, name: str, surname: str)-> dict:
+        '''Поиск аккаунтов по имени и фамилии
+        '''
+        BA.validate_string(string=name, field_name='Name')
+        BA.validate_string(string=surname, field_name='Surname')
+        founded_clients: dict[str, list[str]] = {}
+        for client_id, client_obj in self._all_clients.items():
+            if client_obj._name == name:
+                if client_obj._surname == surname:
+                    founded_clients[client_id] = client_obj._uuids.copy()
+
+        return founded_clients
+                
+            
+    
+    
+
+
+
+
+
+
+
+    
+
+    def get_total_balance(self, *client_ids: str, all_bank_clients: bool =True)-> float:
         ''' 
         Расчет баланса банка по списку клиентов, если стоит флаг all_bank_clents то расчет идет по всем клинетам 
         и их счетам
