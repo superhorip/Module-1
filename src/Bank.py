@@ -248,17 +248,6 @@ class Bank():
 
         return founded_clients
                 
-            
-    
-    
-
-
-
-
-
-
-
-    
 
     def get_total_balance(self, *client_ids: str, all_bank_clients: bool =True)-> float:
         ''' 
@@ -315,6 +304,28 @@ class Bank():
                 clients_sum_balance[client_id] = client_total_sum
 
         return sorted(clients_sum_balance.items(), key=lambda item: item[1], reverse=True)
+
+    def deposit(self, client_id: str, amount: float, acccount_uuid: str):
+        BA.validate_string(string=client_id, field_name='Client ID')
+        BA.validate_string(string=acccount_uuid, field_name='Account UUID')
+        BA.validate_amount(amount=amount)
+        if client_id not in self._all_clients:
+            raise BA.InvalidOperationError('No client with such ID')
+        if acccount_uuid not in self._all_clients[client_id]._uuids:
+            raise BA.InvalidOperationError('Client does not have such account ID')
+        self.check_security(client_id=client_id, action='Deposition of money to account')
+        self._all_bank_accounts[acccount_uuid].deposit(amount=amount)
+
+    def withdraw(self, client_id: str, amount: float, acccount_uuid: str):
+        BA.validate_string(string=client_id, field_name='Client ID')
+        BA.validate_string(string=acccount_uuid, field_name='Account UUID')
+        BA.validate_amount(amount=amount)
+        if client_id not in self._all_clients:
+            raise BA.InvalidOperationError('No client with such ID')
+        if acccount_uuid not in self._all_clients[client_id]._uuids:
+            raise BA.InvalidOperationError('Client does not have such account ID')
+        self.check_security(client_id=client_id, action='Withdrowal of money from account')
+        self._all_bank_accounts[acccount_uuid].withdraw(amount=amount)
 
 
 

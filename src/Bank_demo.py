@@ -21,15 +21,15 @@ client_3_acc2 = my_bank.open_account(client_id=client_2_id, account_type=BA.Prem
 
 
 my_bank._all_bank_accounts[client_1_acc1].deposit(1000)
-my_bank._all_bank_accounts[client_1_acc2].deposit(200)
-my_bank._all_bank_accounts[client_1_acc3].deposit(540)
+my_bank.deposit(client_id=client_1_id, acccount_uuid=client_1_acc1, amount=1000)
+my_bank.deposit(client_id=client_1_id, acccount_uuid=client_1_acc2, amount=200)
+my_bank.deposit(client_id=client_1_id, acccount_uuid=client_1_acc3, amount=540)
 
-my_bank._all_bank_accounts[client_2_acc1].deposit(700)
-my_bank._all_bank_accounts[client_2_acc2].deposit(700)
+my_bank.deposit(client_id=client_2_id, acccount_uuid=client_2_acc1, amount=700)
+my_bank.deposit(client_id=client_2_id, acccount_uuid=client_2_acc2, amount=700)
 
-
-my_bank._all_bank_accounts[client_3_acc1].deposit(700)
-my_bank._all_bank_accounts[client_3_acc2].deposit(700)
+my_bank.deposit(client_id=client_3_id, acccount_uuid=client_3_acc1, amount=700)
+my_bank.deposit(client_id=client_3_id, acccount_uuid=client_3_acc2, amount=700)
 
 print(my_bank.get_total_balance())
 
