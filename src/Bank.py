@@ -5,6 +5,19 @@ from datetime import datetime
 
 import Bank_Account_class as BA
 
+def validate_account_to_client_id(client_id: str, accountt_uuid: str, bank_object: Bank)-> None:
+    BA.validate_string(client_id, field_name='Client_ID')
+    BA.validate_string(accountt_uuid, field_name='Accoount_uuid')
+    if not isinstance(bank_object, Bank):
+            raise BA.InvalidOperationError("Not an Bank object")
+
+    if client_id not in bank_object._all_clients.keys():
+        raise BA.InvalidOperationError('No such client ID')
+    client_obj = bank_object._all_clients[client_id]
+    if accountt_uuid not in client_obj._uuids:
+        raise BA.InvalidOperationError('Client does have not account with such ID')
+    
+
 
 
 
