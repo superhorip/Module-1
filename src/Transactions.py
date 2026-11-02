@@ -9,8 +9,15 @@ import Bank as Bank
 
 class Transaction:
     CURRENCIES = ("RUB", "USD", "EUR", "KZT", "CNY")
-    VALID_TRANSACTION_STATUSES = ( "pending",  "processing",  "completed", "failed", "cancelled",  )
+    VALID_TRANSACTION_STATUSES = (
+        "pending",
+        "processing",
+        "completed",
+        "failed",
+        "cancelled",
+    )
     TRANSATION_TYPES = ("transfer", "withdraw", "deposit")
+    MAX_RETRIES = 3
     """
     """
 
@@ -24,21 +31,19 @@ class Transaction:
         recipient_id: str | None = None,
         sender_acc_id: str | None = None,
         recipient_acc_id: str | None = None,
-        scheduled_at: datetime | None = None
-     ) -> None:
+        scheduled_at: datetime | None = None,
+    ) -> None:
         """
         3 types of transaction: transfer, withdraw, deposit
         """
         self._id = str(uuid4())
-        self.validate_transaction_data(transaction_type=transaction_type, currency=currency, amount=amount, sender_id=sender_id,
-                                      recipient_id=recipient_id)
+        self.validate_transaction_data(transaction_type=transaction_type, currency=currency, amount=amount, sender_id=sender_id, recipient_id=recipient_id)
 
-        self.validate_bank_data(transaction_type=transaction_type, bank_object=bank_object, sender_id=sender_id,
-                                recipient_id=recipient_id, sender_acc_id=sender_acc_id,recipient_acc_id=recipient_acc_id)
+        self.validate_bank_data(transaction_type=transaction_type, bank_object=bank_object, sender_id=sender_id, recipient_id=recipient_id, sender_acc_id=sender_acc_id, recipient_acc_id=recipient_acc_id)
 
         if scheduled_at is not None:
-                if not isinstance(scheduled_at, datetime):
-                    raise BA.InvalidOperationError('Wrong datetime object')
+            if not isinstance(scheduled_at, datetime):
+                raise BA.InvalidOperationError("Wrong datetime object")
         self._sender_id = sender_id
         self._recipient_id = recipient_id
         self._currency = currency
@@ -46,13 +51,13 @@ class Transaction:
         self._transaction_type = transaction_type
         self._recipient_acc_id = recipient_acc_id
         self._sender_acc_id = sender_acc_id
-        self._status = 'pending'
+        self._status = "pending"
         self._failure_reason = None
         self._transfer_fee = 0
         self._creation_time = datetime.now()
         self._processing_time = None
         self._scheduled_at = scheduled_at
-       
+        self._retry_count = None
 
     def validate_transaction_data(
         self,
@@ -82,7 +87,6 @@ class Transaction:
         if transaction_type == "deposit":
             BA.validate_string(string=recipient_id, field_name="Recipient ID")
 
-
     def validate_bank_data(
         self,
         transaction_type: str,
@@ -104,12 +108,12 @@ class Transaction:
         if transaction_type == "withdraw":
             BA.validate_string(string=sender_acc_id, field_name="Sender account ID")
             Bank.validate_account_to_client_id(client_id=sender_id, accountt_uuid=sender_acc_id, bank_object=bank_object)
-            
+
         if transaction_type == "deposit":
             BA.validate_string(string=recipient_acc_id, field_name="Recipient account ID")
             Bank.validate_account_to_client_id(client_id=recipient_id, accountt_uuid=recipient_acc_id, bank_object=bank_object)
-            
-    def get_transaction_data(self)-> dict:
+
+    def get_transaction_data(self) -> dict:
         transaction_data = {
             "Sender": self._sender_id,
             "Recipient": self._recipient_id,
@@ -118,40 +122,37 @@ class Transaction:
             "Recipient_acc_id": self._recipient_acc_id,
             "Amount": self._amount,
             "Transaction_type": self._transaction_type,
-            "Creation time" : self._creation_time,
-            "Processing_time" : self._processing_time,
-            "Transaction status" : self._status,
-            "Failure reason" : self._failure_reason,
-            'Transation ID' : self._id,
-            "Transfer fee" : self._transfer_fee,
-            'Sheduled at' : self._scheduled_at
-
+            "Creation time": self._creation_time,
+            "Processing_time": self._processing_time,
+            "Transaction status": self._status,
+            "Failure reason": self._failure_reason,
+            "Transation ID": self._id,
+            "Transfer fee": self._transfer_fee,
+            "Sheduled at": self._scheduled_at,
+            "Retry count": self._retry_count
         }
         return transaction_data
 
-    def change_transaction_status(self, status: str)-> None:
-        BA.validate_string(string=status, field_name='Transaction status')
+    def change_transaction_status(self, status: str) -> None:
+        BA.validate_string(string=status, field_name="Transaction status")
         if status not in self.VALID_TRANSACTION_STATUSES:
-            raise BA.InvalidOperationError('Wrong status')
-        if self._status == 'pending' and status == 'processing':
+            raise BA.InvalidOperationError("Wrong status")
+        if self._status == "pending" and status == "processing":
             self._status = status
-        elif self._status == 'pending' and status == 'cancelled':
+        elif self._status == "pending" and status == "cancelled":
             self._status = status
-        elif self._status == 'processing' and status == 'completed':
+        elif self._status == "processing" and status == "completed":
             self._status = status
-        elif self._status == 'processing' and status == 'failed':
+        elif self._status == "processing" and status == "failed":
             self._status = status
-        elif self._status == 'failed' and status == 'pending':
+        elif self._status == "failed" and status == "pending":
             self._status = status
         else:
-            raise BA.InvalidOperationError('Could not change status')
-
-
-
+            raise BA.InvalidOperationError("Could not change status")
 
 
 class TransactionQueue:
-    VALID_PRIORITIES = ('1', '2', '3')
+    VALID_PRIORITIES = ("1", "2", "3")
     """
     Queue control
     adds transaction
@@ -163,54 +164,49 @@ class TransactionQueue:
     - ⏳ отложенные операции
     - ❌ отмена
     """
+
     def __init__(self):
         self._transaction_queue = []
 
         pass
 
-    def add_transaction(self,transaction_obj: Transaction, prioprity: str, sheduled_at: datetime | None = None)-> None:
+    def add_transaction(self, transaction_obj: Transaction, prioprity: str, sheduled_at: datetime | None = None) -> None:
 
-        BA.validate_string(string=prioprity, field_name='Transaction priority')
-        if  not isinstance(transaction_obj, Transaction):
-            raise BA.InvalidOperationError('Wrong transaction onject')
+        BA.validate_string(string=prioprity, field_name="Transaction priority")
+        if not isinstance(transaction_obj, Transaction):
+            raise BA.InvalidOperationError("Wrong transaction onject")
         if prioprity not in self.VALID_PRIORITIES:
-            raise BA.InvalidOperationError('No such priority types')
+            raise BA.InvalidOperationError("No such priority types")
         if sheduled_at is not None:
             if not isinstance(sheduled_at, datetime):
-                raise BA.InvalidOperationError('Not a datetime object')
+                raise BA.InvalidOperationError("Not a datetime object")
             transaction_obj._scheduled_at = sheduled_at
-        self._transaction_queue.append({prioprity:transaction_obj})
+        self._transaction_queue.append({prioprity: transaction_obj})
 
-
-        
-
-    def get_next_transaction(self):
-        '''
-        1 priority, 2 time (if more then one with same priority, skip if 
+    def get_next_transaction(self)->Transaction:
+        """
+        1 priority, 2 time (if more then one with same priority, skip if
         ,chanhe status)
         remove transaction from queue
-        '''
+        """
         self._approved_candidate: dict = None
         self._approved_candidate_prioirty: int = None
-        
+
         num_to_remove = None
         for num, candidate in enumerate(self._transaction_queue):
-            if list(candidate.values())[0]._status != 'pending':
+            if list(candidate.values())[0]._status != "pending":
                 continue
             if list(candidate.values())[0]._scheduled_at is not None:
-                            if list(candidate.values())[0]._scheduled_at <= datetime.now():
-                                if self._approved_candidate_prioirty is None or self._approved_candidate_prioirty > int(list(candidate.keys())[0]):
-                                    self._approved_candidate = self._transaction_queue[num]
-                                    self._approved_candidate_prioirty = int(list(self._transaction_queue[num].keys())[0])
-                                    num_to_remove = num
+                if list(candidate.values())[0]._scheduled_at <= datetime.now():
+                    if self._approved_candidate_prioirty is None or self._approved_candidate_prioirty > int(list(candidate.keys())[0]):
+                        self._approved_candidate = self._transaction_queue[num]
+                        self._approved_candidate_prioirty = int(list(self._transaction_queue[num].keys())[0])
+                        num_to_remove = num
             if list(candidate.values())[0]._scheduled_at is None:
-                            if self._approved_candidate_prioirty is None or self._approved_candidate_prioirty > int(list(candidate.keys())[0]):
-                                self._approved_candidate = self._transaction_queue[num]
-                                self._approved_candidate_prioirty = int(list(self._transaction_queue[num].keys())[0])
-                                num_to_remove = num
-        
-            
-
+                if self._approved_candidate_prioirty is None or self._approved_candidate_prioirty > int(list(candidate.keys())[0]):
+                    self._approved_candidate = self._transaction_queue[num]
+                    self._approved_candidate_prioirty = int(list(self._transaction_queue[num].keys())[0])
+                    num_to_remove = num
 
         if num_to_remove is None:
             return None
@@ -218,25 +214,18 @@ class TransactionQueue:
         self._transaction_queue.pop(num_to_remove)
         return list(self._approved_candidate.values())[0]
 
+        pass  #    VALID_TRANSACTION_STATUSES = ( "pending",  "processing",  "completed", "failed", "cancelled",  )
 
-
-        
-        
-        
-        pass #    VALID_TRANSACTION_STATUSES = ( "pending",  "processing",  "completed", "failed", "cancelled",  )
-
-
-
-    def cancel_transaction(self, transation_id,):
-        pass
-    
-
-
-
-
-
-
-
+    def cancel_transaction(self, transation_id: str):
+        transation_found = False
+        BA.validate_string(string=transation_id, field_name="Transaction ID")
+        for num, transaction_dict in enumerate(self._transaction_queue):
+            if list(transaction_dict.values())[0]._id == transation_id and list(transaction_dict.values())[0]._status == "pending":
+                list(transaction_dict.values())[0].change_transaction_status(status="cancelled")
+                transation_found = True
+                break
+        if not transation_found:
+            raise BA.InvalidOperationError("Transaction not found or has not pending status")
 
 
 class TransactionProcessor:
@@ -255,3 +244,90 @@ class TransactionProcessor:
     5. Проверить доступный остаток с учётом комиссии. Для PremiumAccount разрешить овердрафт в пределах установленного лимита.
     6. Изменить балансы и установить completed. При отказе записать failed и причину.
     """
+
+    def get_transaction(self, transaction_queue: TransactionQueue)->Transaction:
+        #TRANSATION_TYPES = ("transfer", "withdraw", "deposit")
+        '''
+        gets transaction from queue
+        '''
+        if not isinstance(transaction_queue, TransactionQueue):
+            raise BA.InvalidOperationError('Not a queue object')
+
+        transaction = transaction_queue.get_next_transaction()
+        if transaction is None:
+            return None
+        if not isinstance(transaction, Transaction):
+            raise BA.InvalidOperationError('Not Transaction type object')
+        return transaction
+
+        
+
+
+
+
+
+
+
+
+
+    def make_transaction(self):
+        ''' main method that calls for other methods'''
+        pass
+
+
+
+    def validate_currency_convertion(self, transaction: Transaction, bank: Bank.Bank):
+        """check if both accounts have same currency and need for convertation
+        returns FAlse if same, True if differs
+        This function is only for between users transfers
+        """
+        transaction_currency = transaction._currency
+        sender_acc_obj = bank._all_bank_accounts[transaction._sender_acc_id]
+        sender_acc_cur = sender_acc_obj._currency
+        recipient_acc_obj = bank._all_bank_accounts[transaction._recipient_acc_id]
+        recipient_acc_cur = recipient_acc_obj._currency
+        if transaction_currency not in (recipient_acc_cur, sender_acc_cur):
+            raise BA.InvalidOperationError('Invalid transaction currency')
+        if sender_acc_cur != recipient_acc_cur :
+            return True
+        else:
+            return False
+
+
+
+
+        pass
+
+
+    def calculate_bank_fee(self):
+        '''
+        calculate fee only between users transaction and not if withdrowal or deposit operations
+        '''
+        pass
+
+    def execute_transfer(self):
+        ''' makes wothdrowal and deposit oprations'''
+        pass
+
+    def retry_transaction(self):
+        ''''
+        manages trials of transaction attempts check limits
+        '''
+        pass
+
+
+
+class CurrencyConverter():
+    currency_rates: dict[str, float] = {
+        "USD": 90.0,
+        "EUR": 100.0,
+        "KZT": 0.20,
+        "CNY": 12.0,
+        "RUB": 1.0,
+    }
+    
+    
+    def convert(amount, from_currency, to_currency):
+        '''
+        converts from currency to currency
+        '''
