@@ -57,7 +57,7 @@ class Transaction:
         self._creation_time = datetime.now()
         self._processing_time = None
         self._scheduled_at = scheduled_at
-        self._retry_count = None
+        self._retry_count = 0
 
     def validate_transaction_data(
         self,
@@ -172,6 +172,7 @@ class TransactionQueue:
 
     def add_transaction(self, transaction_obj: Transaction, prioprity: str, sheduled_at: datetime | None = None) -> None:
 
+        
         BA.validate_string(string=prioprity, field_name="Transaction priority")
         if not isinstance(transaction_obj, Transaction):
             raise BA.InvalidOperationError("Wrong transaction onject")
@@ -181,6 +182,9 @@ class TransactionQueue:
             if not isinstance(sheduled_at, datetime):
                 raise BA.InvalidOperationError("Not a datetime object")
             transaction_obj._scheduled_at = sheduled_at
+        if any(list(item.values())[0]._id == transaction_obj._id for item in self._transaction_queue):
+                raise BA.InvalidOperationError("Transaction already in queue")
+
         self._transaction_queue.append({prioprity: transaction_obj})
 
     def get_next_transaction(self)->Transaction:
@@ -229,6 +233,7 @@ class TransactionQueue:
 
 
 class TransactionProcessor:
+    COMMISSION_FEE = 0.01
     """
         - 💰 комиссии
         - 💱 конвертация
@@ -263,31 +268,51 @@ class TransactionProcessor:
 
 
 
-    def make_transaction(self, transaction_queue: TransactionQueue, bank_obj: Bank.Bank ):
+    def make_transaction(self, transaction_queue: TransactionQueue, bank_obj: Bank.Bank, currency_convertr: "CurrencyConverter"):
         ''' main method that calls for other methods'''
         
         if not isinstance(transaction_queue, TransactionQueue):
             raise BA.InvalidOperationError('Wrong object')
         if not isinstance(bank_obj, Bank.Bank):
-            raise BA.InvalidOperationError('Wrong object')        
+            raise BA.InvalidOperationError('Wrong object')
+        if not isinstance(currency_convertr, CurrencyConverter):
+            raise BA.InvalidOperationError('Not Converter type')         
         transaction = self.get_transaction(transaction_queue=transaction_queue)
-        need_currency_conversion = self.validate_currency_convertion(transaction=transaction, bank=bank_obj)
-        dont_need_extra_fee = False
-        if bank_obj._all_bank_accounts[transaction._sender_acc_id].get_account_info['type'] == 'PremiumBankAccount':
-            dont_need_extra_fee = True
-        if not dont_need_extra_fee:
-            bank_fee = self.calculate_bank_fee(transaction=transaction,bank=bank_obj)
-        
-        
+        if transaction is None:
+            raise BA.InvalidOperationError('No suitable transactions in queue')
+        transaction._processing_time = datetime.now()
+        transaction.change_transaction_status(status='processing')
 
-        status = self.execute_transfer()
-        
+        try:
+            if transaction._transaction_type == 'transfer':
+                need_currency_conversion = self.validate_currency_convertion(transaction=transaction, bank=bank_obj)
+                dont_need_extra_fee = False
+                if bank_obj._all_bank_accounts[transaction._sender_acc_id].get_account_info()['type'] == 'PremiumBankAccount':
+                    dont_need_extra_fee = True
+                    self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
+                                        currency_convertr=currency_convertr, bank_fee=0)                
+                if not dont_need_extra_fee:
+                    bank_fee = self.calculate_bank_fee(transaction=transaction,bank=bank_obj, currency_convertr=currency_convertr)
+                    transaction._transfer_fee = self.COMMISSION_FEE * transaction._amount
+                    self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
+                                        currency_convertr=currency_convertr, bank_fee=bank_fee)
+            if transaction._transaction_type == 'withdraw':
+                need_currency_conversion = self.validate_currency_convertion(transaction=transaction, bank=bank_obj)
+                dont_need_extra_fee = True
+                self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
+                                        currency_convertr=currency_convertr, bank_fee=0)          
+            if transaction._transaction_type == 'deposit':
+                need_currency_conversion = self.validate_currency_convertion(transaction=transaction, bank=bank_obj)
+                dont_need_extra_fee = True
+                self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
+                                        currency_convertr=currency_convertr, bank_fee=0)
+        except (BA.InvalidOperationError, BA.AccountClosedError, BA.AccountFrozenError, BA.InsufficientFundsError) as e:
+            print (f'Operation failed: {e}')
+            transaction._failure_reason = f'Operation failed: {e}'
+            if transaction._status != 'failed':
+                transaction.change_transaction_status(status='failed')
 
 
-
-
-
-        pass
 
 
 
@@ -296,31 +321,49 @@ class TransactionProcessor:
         returns FAlse if same, True if differs
         This function is only for between users transfers
         """
-        transaction_currency = transaction._currency
-        sender_acc_obj = bank._all_bank_accounts[transaction._sender_acc_id]
-        sender_acc_cur = sender_acc_obj._currency
-        recipient_acc_obj = bank._all_bank_accounts[transaction._recipient_acc_id]
-        recipient_acc_cur = recipient_acc_obj._currency
-        if transaction_currency not in (recipient_acc_cur, sender_acc_cur):
-            raise BA.InvalidOperationError('Invalid transaction currency')
-        if sender_acc_cur != recipient_acc_cur :
-            return True
-        else:
-            return False
+        if transaction._transaction_type == 'transfer':
+            transaction_currency = transaction._currency
+            sender_acc_obj = bank._all_bank_accounts[transaction._sender_acc_id]
+            sender_acc_cur = sender_acc_obj._currency
+            recipient_acc_obj = bank._all_bank_accounts[transaction._recipient_acc_id]
+            recipient_acc_cur = recipient_acc_obj._currency
+            if transaction_currency not in (recipient_acc_cur, sender_acc_cur):
+                raise BA.InvalidOperationError('Invalid transaction currency')
+            if sender_acc_cur != recipient_acc_cur :
+                return True
+            else:
+                return False
+        if transaction._transaction_type == 'withdraw':
+            transaction_currency = transaction._currency
+            sender_acc_obj = bank._all_bank_accounts[transaction._sender_acc_id]
+            sender_acc_cur = sender_acc_obj._currency
+            if sender_acc_cur != transaction_currency:
+                return True
+            else:
+                return False
+        if transaction._transaction_type == 'deposit':
+            transaction_currency = transaction._currency
+            recipient_acc_obj = bank._all_bank_accounts[transaction._recipient_acc_id]
+            recipient_acc_cur = recipient_acc_obj._currency
+            if transaction._currency != recipient_acc_cur :
+                return True
+            else:
+                return False   
 
 
-    def calculate_bank_fee(self ,transaction: Transaction, currency_convertr: CurrencyConverter, bank: Bank.Bank):
+
+    def calculate_bank_fee(self ,transaction: Transaction, currency_convertr: "CurrencyConverter", bank: Bank.Bank):
         '''
         calculate fee only between users transaction and not if withdrowal or deposit operations
         '''
-        comission_fee = 0.01
+
         if not isinstance(transaction, Transaction):
             raise BA.InvalidOperationError('Not transaction type')
         if not isinstance(currency_convertr, CurrencyConverter):
             raise BA.InvalidOperationError('Not Converter type')
         if not isinstance(bank, Bank.Bank):
             raise BA.InvalidOperationError('Not bank object')
-        trans_fee = transaction._amount * comission_fee
+        trans_fee = transaction._amount * self.COMMISSION_FEE
         if bank._all_bank_accounts[transaction._sender_acc_id]._currency != transaction._currency:
             bank_fee = currency_convertr.convert(amount = trans_fee, from_currency=transaction._currency , to_currency=bank._all_bank_accounts[transaction._sender_acc_id]._currency)
             return bank_fee
@@ -329,8 +372,8 @@ class TransactionProcessor:
 
 
 
-    def execute_transfer(self, transaction: Transaction, bank_obj: Bank.Bank, need_corrency_conversion: bool, dont_need_extra_fee: bool, currency_convertr: CurrencyConverter):
-        ''' makes wothdrowal and deposit oprations'''
+    def execute_transfer(self, transaction: Transaction, bank_obj: Bank.Bank, need_corrency_conversion: bool, dont_need_extra_fee: bool, currency_convertr: "CurrencyConverter", bank_fee: float):
+        ''' makes transfer withdrowal and deposit oprations'''
         if not isinstance(bank_obj, Bank.Bank):
             raise BA.InvalidOperationError('Not bank object')
         if not isinstance(transaction, Transaction):
@@ -339,18 +382,95 @@ class TransactionProcessor:
             raise BA.InvalidOperationError('Not bool type')
         if not isinstance(dont_need_extra_fee, bool):
             raise BA.InvalidOperationError('Not bool type')
-        sender_profile_is_blocked = bank_obj._all_clients[transaction._sender_id]._isblocked
-        recipient_profile_is_blocked = bank_obj._all_clients[transaction._recipient_id]._isblocked
-        sender_account_active = False
-        recipient_account_active = False
-        if bank_obj._all_bank_accounts[transaction._sender_acc_id]._account_status == 'active':
-            sender_account_active = True
-        if bank_obj._all_bank_accounts[transaction._recipient_acc_id]._account_status == 'active':
-            recipient_account_active = True
-        if need_corrency_conversion:
-            amount_to_withdraw = currency_convertr.convert(amount=transaction._amount, from_currency=bank_obj._all_bank_accounts[transaction._sender_acc_id] , to_currency=transaction._currency)
-        if need_corrency_conversion:
-            amount_to_deposit = currency_convertr.convert(amount=transaction._amount, from_currency=transaction._currency , to_currency=bank_obj._all_bank_accounts[transaction._recipient_acc_id])
+        if transaction._transaction_type == 'transfer':
+            BA.validate_amount(amount=bank_fee, allow_zero=True)
+            sender_profile_is_blocked = bank_obj._all_clients[transaction._sender_id]._isblocked
+            recipient_profile_is_blocked = bank_obj._all_clients[transaction._recipient_id]._isblocked
+            sender_account_active = False
+            recipient_account_active = False
+            if bank_obj._all_bank_accounts[transaction._sender_acc_id]._account_status == 'active':
+                sender_account_active = True
+            if bank_obj._all_bank_accounts[transaction._recipient_acc_id]._account_status == 'active':
+                recipient_account_active = True
+            if need_corrency_conversion:
+                amount_to_withdraw = currency_convertr.convert(amount=transaction._amount, from_currency=transaction._currency , to_currency=bank_obj._all_bank_accounts[transaction._sender_acc_id]._currency)
+            else:
+                amount_to_withdraw = transaction._amount
+            if need_corrency_conversion:
+                amount_to_deposit = currency_convertr.convert(amount=transaction._amount, from_currency=transaction._currency , to_currency=bank_obj._all_bank_accounts[transaction._recipient_acc_id]._currency)
+            else:
+                amount_to_deposit = transaction._amount
+            if not sender_profile_is_blocked and not recipient_profile_is_blocked and sender_account_active and recipient_account_active:
+                if dont_need_extra_fee:
+                    try:
+                        bank_obj.withdraw(client_id=transaction._sender_id, amount=amount_to_withdraw, acccount_uuid=transaction._sender_acc_id)
+                        bank_obj.deposit(client_id=transaction._recipient_id, amount=amount_to_deposit, acccount_uuid=transaction._recipient_acc_id)
+                        transaction.change_transaction_status(status='completed')
+                    except (BA.InvalidOperationError, BA.AccountClosedError, BA.AccountFrozenError, BA.InsufficientFundsError) as e:
+                        print (f'Operation failed: {e}')
+                        transaction._failure_reason = f'Operation failed: {e}'
+                        transaction.change_transaction_status(status='failed')                        
+                else:
+                    try:
+                        bank_obj.withdraw(client_id=transaction._sender_id,amount=amount_to_withdraw+bank_fee, acccount_uuid=transaction._sender_acc_id)
+                        bank_obj.deposit(client_id=transaction._recipient_id, amount=amount_to_deposit, acccount_uuid=transaction._recipient_acc_id)
+                        transaction.change_transaction_status(status='completed')
+                    except (BA.InvalidOperationError, BA.AccountClosedError, BA.AccountFrozenError, BA.InsufficientFundsError) as e:
+                        print (f'Operation failed: {e}')
+                        transaction._failure_reason = f'Operation failed: {e}'                        
+                        transaction.change_transaction_status(status='failed')
+                
+            else:
+                transaction.change_transaction_status(status='failed')
+                transaction._failure_reason = 'Account blocked, frozen or client is blocked'
+                
+        if transaction._transaction_type == 'withdraw':
+            BA.validate_amount(amount=bank_fee, allow_zero=True)
+            sender_profile_is_blocked = bank_obj._all_clients[transaction._sender_id]._isblocked
+            sender_account_active = False
+            if bank_obj._all_bank_accounts[transaction._sender_acc_id]._account_status == 'active':
+                sender_account_active = True
+            if need_corrency_conversion:
+                amount_to_withdraw = currency_convertr.convert(amount=transaction._amount, from_currency=transaction._currency , to_currency=bank_obj._all_bank_accounts[transaction._sender_acc_id]._currency)
+            else:
+                amount_to_withdraw = transaction._amount
+            if not sender_profile_is_blocked and sender_account_active:
+                try:
+                    bank_obj.withdraw(client_id=transaction._sender_id, amount=amount_to_withdraw, acccount_uuid=transaction._sender_acc_id)
+                    transaction.change_transaction_status(status='completed')
+                except (BA.InvalidOperationError, BA.AccountClosedError, BA.AccountFrozenError, BA.InsufficientFundsError) as e:
+                        print (f'Operation failed: {e}')
+                        transaction._failure_reason = f'Operation failed: {e}'                        
+                        transaction.change_transaction_status(status='failed')
+            else:
+                transaction.change_transaction_status(status='failed')
+                transaction._failure_reason = 'Account blocked, frozen or client is blocked'                
+                            
+                
+        if transaction._transaction_type == 'deposit':
+            BA.validate_amount(amount=bank_fee, allow_zero=True)
+            recipient_profile_is_blocked = bank_obj._all_clients[transaction._recipient_id]._isblocked
+            recipient_account_active = False
+            if bank_obj._all_bank_accounts[transaction._recipient_acc_id]._account_status == 'active':
+                recipient_account_active = True
+            if need_corrency_conversion:
+                amount_to_deposit = currency_convertr.convert(amount=transaction._amount, from_currency=transaction._currency , to_currency=bank_obj._all_bank_accounts[transaction._recipient_acc_id]._currency)
+            else:
+                amount_to_deposit = transaction._amount
+            if not recipient_profile_is_blocked and recipient_account_active:
+                try:
+                    bank_obj.deposit(client_id=transaction._recipient_id, amount=amount_to_deposit, acccount_uuid=transaction._recipient_acc_id)
+                    transaction.change_transaction_status(status='completed')
+                except (BA.InvalidOperationError, BA.AccountClosedError, BA.AccountFrozenError) as e:
+                        print (f'Operation failed: {e}')
+                        transaction.change_transaction_status(status='failed')   
+                        transaction._failure_reason = f'Operation failed: {e}'                                         
+            else:
+                transaction.change_transaction_status(status='failed')
+                transaction._failure_reason = 'Account blocked, frozen or client is blocked'                     
+
+
+
             
 
         
@@ -358,11 +478,24 @@ class TransactionProcessor:
         
         pass
 
-    def retry_transaction(self):
-        ''''
-        manages trials of transaction attempts check limits
-        '''
-        pass
+def retry_transaction(self,  transaction: Transaction, transaction_queue: TransactionQueue, priority: str = "2") -> None:
+
+    if not isinstance(transaction, Transaction):
+        raise BA.InvalidOperationError("Not a Transaction object")
+
+    if not isinstance(transaction_queue, TransactionQueue):
+        raise BA.InvalidOperationError("Not a TransactionQueue object")
+
+    if transaction._status != "failed":
+        raise BA.InvalidOperationError("Only failed transactions can be retried")
+
+    if transaction._retry_count >= transaction.MAX_RETRIES:
+        raise BA.InvalidOperationError("Maximum retries exceeded")
+
+    transaction.change_transaction_status("pending")
+    transaction_queue.add_transaction(transaction_obj=transaction,  prioprity=priority, sheduled_at=datetime.now() )
+    transaction._retry_count += 1
+    transaction._failure_reason = None
 
 
 

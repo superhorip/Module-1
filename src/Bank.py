@@ -5,7 +5,7 @@ from datetime import datetime
 
 import Bank_Account_class as BA
 
-def validate_account_to_client_id(client_id: str, accountt_uuid: str, bank_object: Bank)-> None:
+def validate_account_to_client_id(client_id: str, accountt_uuid: str, bank_object: "Bank")-> None:
     BA.validate_string(client_id, field_name='Client_ID')
     BA.validate_string(accountt_uuid, field_name='Accoount_uuid')
     if not isinstance(bank_object, Bank):
