@@ -5,7 +5,7 @@ from datetime import datetime
 
 import Bank_Account_class as BA
 import Bank as Bank
-
+import Risk_analyzer as RiskAnalyzer
 
 class Transaction:
     CURRENCIES = ("RUB", "USD", "EUR", "KZT", "CNY")
@@ -234,6 +234,7 @@ class TransactionQueue:
 
 class TransactionProcessor:
     COMMISSION_FEE = 0.01
+    VALID_RISKS_LEVELS = ('LOW', 'MEDIUM', 'HIGH')
     """
         - 💰 комиссии
         - 💱 конвертация
@@ -268,7 +269,7 @@ class TransactionProcessor:
 
 
 
-    def make_transaction(self, transaction_queue: TransactionQueue, bank_obj: Bank.Bank, currency_convertr: "CurrencyConverter"):
+    def make_transaction(self, transaction_queue: TransactionQueue, bank_obj: Bank.Bank, currency_convertr: "CurrencyConverter", risk_analyser: RiskAnalyzer.RiskAnalyzer):
         ''' main method that calls for other methods'''
         
         if not isinstance(transaction_queue, TransactionQueue):
@@ -280,8 +281,17 @@ class TransactionProcessor:
         transaction = self.get_transaction(transaction_queue=transaction_queue)
         if transaction is None:
             raise BA.InvalidOperationError('No suitable transactions in queue')
+        if not isinstance(risk_analyser, RiskAnalyzer.RiskAnalyzer):
+            BA.InvalidOperationError('Wrong object type')
         transaction._processing_time = datetime.now()
         transaction.change_transaction_status(status='processing')
+        transaction_risk = risk_analyser.evaluate_transaction_risk(transaction=transaction)
+        if transaction_risk not in self.VALID_RISKS_LEVELS:
+            raise BA.InvalidOperationError('Not such risk level')
+        if transaction_risk == 'HIGH':
+            BA.InvalidOperationError('High risk_transaction. Processing stopped')
+            transaction.change_transaction_status(status='failed')
+
 
         try:
             if transaction._transaction_type == 'transfer':
