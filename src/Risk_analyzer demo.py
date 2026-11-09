@@ -8,6 +8,7 @@ import Bank as Bank
 import Transactions
 import Risk_analyzer
 
+
 bank_obj = Bank.Bank()
 
 alice = bank_obj.add_client(
@@ -299,3 +300,10 @@ assert completed == 9 and failed == 1
 assert len(queue._transaction_queue) == 0
 
 print("PASS: 10 транзакций обработаны, ожидаемые статусы получены")
+
+
+new = Risk_analyzer.AuditLog()
+#print (transactions[2][2].get_transaction_data())
+new.add_transation_to_log(transaction=transactions[2][2], risk_level='high')
+
+print(new._audit_log[0])

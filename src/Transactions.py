@@ -269,7 +269,7 @@ class TransactionProcessor:
 
 
 
-    def make_transaction(self, transaction_queue: TransactionQueue, bank_obj: Bank.Bank, currency_convertr: "CurrencyConverter", risk_analyser: RiskAnalyzer.RiskAnalyzer):
+    def make_transaction(self, transaction_queue: TransactionQueue, bank_obj: Bank.Bank, currency_convertr: "CurrencyConverter", risk_analyser: "RiskAnalyzer.RiskAnalyzer"):
         ''' main method that calls for other methods'''
         
         if not isinstance(transaction_queue, TransactionQueue):
