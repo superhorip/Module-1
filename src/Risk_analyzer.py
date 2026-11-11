@@ -24,8 +24,6 @@ class AuditLog:
         pass
 
     def add_transation_to_log(self, transaction: "Transactions.Transaction", risk_level: str) -> None:
-        if not isinstance(transaction, Transactions.Transaction):
-            raise BA.InvalidOperationError("Wrong data type")
         if not isinstance(risk_level, str):
             raise BA.InvalidOperationError("Wrong type")
         transaction_dict = transaction.get_transaction_data()
@@ -38,7 +36,7 @@ class AuditLog:
             raise BA.InvalidOperationError("Wrong type")
         user_transactions = []
         for transaction_note in self._audit_log:
-            if transaction_note._sender_id == client_id:
+            if transaction_note['Sender'] == client_id:
                 user_transactions.append(transaction_note)
         return user_transactions
 
@@ -68,10 +66,7 @@ class AuditLog:
 class RiskAnalyzer:
     VALID_RISKS_LEVELS = ("LOW", "MEDIUM", "HIGH")
     MAXIMUM_OPERATIONS_PER_10_MINUTES = 5
-    NIGHT_TIME_STARTS = 0
-    NIGHT_TIME_ENDS = 5
     LARGE_AMOUNT_AS_PERCENT_OF_BALANCE = 0.5
-    NUM_OF_TRANSFER_TO_NEW_ACCOUNTS = 3
 
     POINTS_PER_MAX_TIME_INTL_OPS = 20
     POINTS_PER_NEW_ACCOUTS_TRANSFER = 20
@@ -80,9 +75,9 @@ class RiskAnalyzer:
 
     LOW_RISK_TRESHOLD = 29
     MED_RISK_TRESHOLD = 59
-    HIGH_RISK_TRESHOLD = 60
 
-    def __init__(self, audit_log: AuditLog, bank_obj: Bank.Bank):
+
+    def __init__(self, audit_log: AuditLog, bank_obj: "Bank.Bank"):
         if not isinstance(audit_log, AuditLog):
             raise BA.InvalidOperationError("Wrong datatype")
         if not isinstance(bank_obj, Bank.Bank):
@@ -96,13 +91,33 @@ class RiskAnalyzer:
         #Evaluates risk level and return it to Transaction processor
 
         """
-        if not isinstance(transaction, Transactions.Transaction):
-            raise BA.InvalidOperationError("Wrong data type")
+        points = 0
+        if not self._bank_obj.check_allowed_time_interval():
+            points = points + self.POINTS_PER_NIGHT_TRANSFER
         transaction_type = transaction._transaction_type
         if transaction_type == "transfer" or transaction_type == "withdraw":
-            return "TEMP"
+            if self.evaluate_large_sum_transfer(transaction=transaction):
+                points = points + self.POINTS_PER_LARGE_AMOUNT_TRANSFER
+            if self.evaluate_max_per_10_min_ops(client_id=transaction._sender_id) > self.MAXIMUM_OPERATIONS_PER_10_MINUTES:
+                points = points + self.POINTS_PER_MAX_TIME_INTL_OPS
+        if transaction_type == "transfer":
+            if self.evaluate_new_account_transfer(transaction=transaction):
+                points = points + self.POINTS_PER_NEW_ACCOUTS_TRANSFER
+        if points <= self.LOW_RISK_TRESHOLD:
+            return 'LOW'
+        if self.LOW_RISK_TRESHOLD < points <= self.MED_RISK_TRESHOLD:
+            return 'MEDIUM'
+        if points > self.MED_RISK_TRESHOLD:
+            return 'HIGH'
+            
 
-    def evaluate_max_per_10_min_ops(self, client_id: str):
+
+
+
+
+        
+
+    def evaluate_max_per_10_min_ops(self, client_id: str)->int:
         """Pass audit log throught constructor"""
         if not isinstance(client_id, str):
             raise BA.InvalidOperationError("Wrong type")
@@ -120,11 +135,17 @@ class RiskAnalyzer:
     def evaluate_night_time(self):
         pass
 
-    def evaluate_large_sum_transfer(self, transaction: "Transactions.Transaction") -> bool:
-        if not isinstance(transaction, Transactions.Transaction):
-            raise BA.InvalidOperationError("Wrong data type")
+    def evaluate_large_sum_transfer(self, transaction: "Transactions.Transaction", trans_processor: Transactions.TransactionProcessor, cur_converter: Transactions.CurrencyConverter) -> bool:
         transaction_type = transaction._transaction_type
         if transaction_type == "transfer" or transaction_type == "withdraw":
+            if transaction_type == "transfer":
+                if trans_processor.validate_currency_convertion(transaction=transaction, bank=self._bank_obj):
+                    withdrow_amount = cur_converter.convert(amount=transaction._amount, from_currency=transaction._amount, to_currency=self._bank_obj._all_bank_accounts[transaction._sender_acc_id]._currency)
+                    threshold = self._bank_obj._all_bank_accounts[transaction._sender_acc_id]._balance * self.LARGE_AMOUNT_AS_PERCENT_OF_BALANCE
+                    if withdrow_amount > threshold:
+                                    return True
+
+
             threshold = self._bank_obj._all_bank_accounts[transaction._sender_acc_id]._balance * self.LARGE_AMOUNT_AS_PERCENT_OF_BALANCE
             if transaction._amount > threshold:
                 return True
@@ -134,15 +155,25 @@ class RiskAnalyzer:
             return False
 
     def evaluate_new_account_transfer(self, transaction: "Transactions.Transaction")->bool:
-        if not isinstance(transaction, Transactions.Transaction):
-            raise BA.InvalidOperationError("Wrong data type")
+        '''check wether current transfer to new acc or not'''
+        history_acc_transfers = []
+        if transaction._transaction_type == 'transfer':
+            client_id = transaction._sender_id
+            client_log = self._audit_log.get_client_transaction_history(client_id=client_id)        
+            for transaction_note in client_log:
+                if transaction_note['Transaction_type'] == 'transfer' and transaction_note['Transaction status'] == 'completed':
+                    history_acc_transfers.append(transaction_note['Recipient_acc_id'])
+        else:
+            return False
 
-        history_acc_id = []
-        client_log = self._audit_log.get_client_transaction_history(client_id)        
-        for transaction_note in client_log:
-            if transaction_note["Processing_time"] is not None:
-                if transaction_note["Processing_time"] > time_10_min_ago and transaction_note["Processing_time"] < current_time:
-                    num_of_transaction += 1
-        return num_of_transaction        
+        if history_acc_transfers:
+            if transaction._recipient_acc_id in history_acc_transfers:
+                return False
+            else:
+                return True
+        else:
+            return True
 
-        pass
+
+
+
