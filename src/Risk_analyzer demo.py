@@ -1,309 +1,108 @@
-from abc import ABC, abstractmethod
-from uuid import uuid4
-import math
-from datetime import datetime
 
-import Bank_Account_class as BA
+from datetime import datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import Bank as Bank
-import Transactions
-import Risk_analyzer
+import Bank_Account_class as BA
+import Transactions as T
+from Risk_analyzer import AuditLog, RiskAnalyzer
 
 
-bank_obj = Bank.Bank()
+# Создаём банк, клиентов и счета
+bank = Bank.Bank()
 
-alice = bank_obj.add_client(
-    name="Alice", surname="Brown",
-    age=30, phone_number="111111"
+alice = bank.add_client(name="Alice", surname="Brown", age=30, phone_number="111111")
+bob = bank.add_client(name="Bob", surname="Smith", age=35, phone_number="222222")
+charlie = bank.add_client(name="Charlie", surname="Green", age=40, phone_number="333333")
+
+alice_acc = bank.open_account(
+    client_id=alice, account_type=BA.BankAccount, currency="RUB"
+)
+bob_acc = bank.open_account(
+    client_id=bob, account_type=BA.BankAccount, currency="RUB"
+)
+charlie_acc = bank.open_account(
+    client_id=charlie, account_type=BA.BankAccount, currency="RUB"
 )
 
-bob = bank_obj.add_client(
-    name="Bob", surname="Smith",
-    age=35, phone_number="222222"
-)
-
-charlie = bank_obj.add_client(
-    name="Charlie", surname="Green",
-    age=40, phone_number="333333"
-)
-
-risk_analyzer = Risk_analyzer.RiskAnalyzer()
-# ============================================================
-# 2. ОТКРЫВАЕМ СЧЕТА
-# ============================================================
-
-alice_rub = bank_obj.open_account(
-    client_id=alice,
-    account_type=BA.BankAccount,
-    currency="RUB"
-)
-
-bob_usd = bank_obj.open_account(
-    client_id=bob,
-    account_type=BA.BankAccount,
-    currency="USD"
-)
-
-charlie_rub = bank_obj.open_account(
-    client_id=charlie,
-    account_type=BA.PremiumAccount,
-    currency="RUB",
-    overdraft_limit=1000,
-    bank_fee=2,
-    withdrawal_limit=10000
-)
+bank.deposit(client_id=alice, amount=10000, acccount_uuid=alice_acc)
 
 
-# ============================================================
-# 3. НАЧАЛЬНЫЕ БАЛАНСЫ
-# ============================================================
-
-bank_obj.deposit(
-    client_id=alice, amount=10000,
-    acccount_uuid=alice_rub
-)
-
-bank_obj.deposit(
-    client_id=bob, amount=200,
-    acccount_uuid=bob_usd
-)
-
-bank_obj.deposit(
-    client_id=charlie, amount=500,
-    acccount_uuid=charlie_rub
-)
-
-accounts = {
-    "Alice RUB": alice_rub,
-    "Bob USD": bob_usd,
-    "Charlie RUB Premium": charlie_rub
-}
+def transfer(recipient, account, amount):
+    return T.Transaction(
+        bank_object=bank,
+        transaction_type="transfer",
+        currency="RUB",
+        amount=amount,
+        sender_id=alice,
+        sender_acc_id=alice_acc,
+        recipient_id=recipient,
+        recipient_acc_id=account
+    )
 
 
-def show_balances(title):
-    print(f"\n--- {title} ---")
-
-    for label, account_id in accounts.items():
-        account = bank_obj._all_bank_accounts[account_id]
-
-        print(
-            f"{label:22} "
-            f"{account._balance:12.2f} "
-            f"{account._currency}"
-        )
+def check(description, transaction, expected):
+    result = analyzer.evaluate_transaction_risk(transaction)
+    print(f"{description:32} {result:7} ожидалось: {expected}")
+    assert result == expected, f"{description}: {result} != {expected}"
 
 
-show_balances("Баланс до транзакций")
+with TemporaryDirectory() as folder:
+    filename = str(Path(folder) / "audit.json")
 
-queue = Transactions.TransactionQueue()
-processor = Transactions.TransactionProcessor()
-converter = Transactions.CurrencyConverter()
+    log = AuditLog(filename)
+    analyzer = RiskAnalyzer(log, bank, T.CurrencyConverter())
 
-#5. ДЕСЯТЬ ТЕСТОВЫХ ТРАНЗАКЦИЙ
-# ============================================================
+    # 1. Обычный перевод: новый счёт +20 = LOW
+    check(
+        "Обычный перевод",
+        transfer(bob, bob_acc, 100),
+        "LOW"
+    )
 
-# Формат: описание, приоритет, параметры транзакции
+    # 2. Крупный перевод: сумма +30, новый счёт +20 = MEDIUM
+    check(
+        "Крупный перевод",
+        transfer(charlie, charlie_acc, 6000),
+        "MEDIUM"
+    )
 
-cases = [(  "Alice: пополнение RUB", "1", dict(transaction_type="deposit", currency="RUB", amount=1000, recipient_id=alice, recipient_acc_id=alice_rub )),
-    (
-        "Bob: пополнение USD",
-        "1",
-        dict(
-            transaction_type="deposit",
-            currency="USD",
-            amount=50,
-            recipient_id=bob,
-            recipient_acc_id=bob_usd
-        )
-    ),
-    (
-        "Charlie: пополнение USD на RUB-счёт",
-        "1",
-        dict(
-            transaction_type="deposit",
-            currency="USD",
-            amount=10,
-            recipient_id=charlie,
-            recipient_acc_id=charlie_rub
-        )
-    ),
-    (
-        "Alice RUB -> Bob USD",
-        "2",
-        dict(
-            transaction_type="transfer",
-            currency="RUB",
-            amount=900,
-            sender_id=alice,
-            sender_acc_id=alice_rub,
-            recipient_id=bob,
-            recipient_acc_id=bob_usd
-        )
-    ),
-    (
-        "Bob USD -> Alice RUB",
-        "2",
-        dict(
-            transaction_type="transfer",
-            currency="USD",
-            amount=20,
-            sender_id=bob,
-            sender_acc_id=bob_usd,
-            recipient_id=alice,
-            recipient_acc_id=alice_rub
-        )
-    ),
-    (
-        "Charlie Premium -> Alice RUB",
-        "2",
-        dict(
-            transaction_type="transfer",
+    # 3. Создаём историю из пяти операций за последние 10 минут
+    for _ in range(5):
+        t = T.Transaction(
+            bank_object=bank,
+            transaction_type="withdraw",
             currency="RUB",
             amount=100,
-            sender_id=charlie,
-            sender_acc_id=charlie_rub,
-            recipient_id=alice,
-            recipient_acc_id=alice_rub
-        )
-    ),
-    (
-        "Alice: слишком большой перевод",
-        "2",
-        dict(
-            transaction_type="transfer",
-            currency="RUB",
-            amount=1_000_000,
             sender_id=alice,
-            sender_acc_id=alice_rub,
-            recipient_id=charlie,
-            recipient_acc_id=charlie_rub
+            sender_acc_id=alice_acc
         )
-    ),
-    (
-        "Alice: снятие RUB",
-        "3",
-        dict(
-            transaction_type="withdraw",
-            currency="RUB",
-            amount=150,
-            sender_id=alice,
-            sender_acc_id=alice_rub
-        )
-    ),
-    (
-        "Bob: снятие RUB с USD-счёта",
-        "3",
-        dict(
-            transaction_type="withdraw",
-            currency="RUB",
-            amount=900,
-            sender_id=bob,
-            sender_acc_id=bob_usd
-        )
-    ),
-    (
-        "Charlie Premium: снятие RUB",
-        "3",
-        dict(
-            transaction_type="withdraw",
-            currency="RUB",
-            amount=50,
-            sender_id=charlie,
-            sender_acc_id=charlie_rub
-        )
-    )
-]
+        t._status = "completed"
+        t._processing_time = datetime.now() - timedelta(seconds=1)
 
+        log.add_transation_to_log(t, "LOW", filename)
 
-# ============================================================
-# 6. СОЗДАЁМ ТРАНЗАКЦИИ И ДОБАВЛЯЕМ В ОЧЕРЕДЬ
-# ============================================================
+    count = analyzer.evaluate_max_per_10_min_ops(alice)
+    print(f"Операций за 10 минут: {count}")
+    assert count == 5
 
-transactions = []
-
-for description, priority, kwargs in cases:
-
-    transaction = Transactions.Transaction(
-        bank_object=bank_obj,
-        **kwargs
+    # 4. Сумма +30, частота +20, новый счёт +20 = HIGH
+    check(
+        "Подозрительный перевод",
+        transfer(charlie, charlie_acc, 6000),
+        "HIGH"
     )
 
-    transactions.append(
-        (description, priority, transaction)
+    # 5. Проверяем восстановление журнала из JSON
+    restored_log = AuditLog(filename)
+    history = restored_log.get_client_transaction_history(alice)
+
+    assert len(history) == 5
+    assert all(
+        isinstance(t["Processing_time"], datetime)
+        for t in history
     )
 
-    queue.add_transaction(
-        transaction_obj=transaction,
-        prioprity=priority
-    )
-
-print(f"\nСоздано транзакций: {len(transactions)}")
-print(f"В очереди: {len(queue._transaction_queue)}")
-
-# 7. ВЫПОЛНЯЕМ ТРАНЗАКЦИИ
-# ============================================================
-
-for number in range(len(transactions)):
-
-    processor.make_transaction(
-        transaction_queue=queue,
-        bank_obj=bank_obj,
-        currency_convertr=converter,
-        risk_analyser=risk_analyzer
-    )
-
-
-# ============================================================
-# 8. ВЫВОДИМ РЕЗУЛЬТАТЫ
-# ============================================================
-
-print("\n--- Результаты (в порядке создания) ---")
-
-for number, (description, priority, transaction) in enumerate(
-    transactions, 1
-):
-
-    print(f"{number:2}. P{priority} {description}")
-
-    print(
-        f"    {transaction._amount:g} "
-        f"{transaction._currency} | "
-        f"{transaction._status} | "
-        f"комиссия {transaction._transfer_fee:g} | "
-        f"ошибка: {transaction._failure_reason}"
-    )
-
-
-# ============================================================
-# 9. ИТОГОВЫЕ БАЛАНСЫ И ПРОВЕРКИ
-# ============================================================
-
-show_balances("Баланс после транзакций")
-
-completed = sum(
-    t._status == "completed"
-    for _, _, t in transactions
-)
-
-failed = sum(
-    t._status == "failed"
-    for _, _, t in transactions
-)
-
-print(
-    f"\nИтого: {completed} completed, "
-    f"{failed} failed, "
-    f"в очереди {len(queue._transaction_queue)}"
-)
-
-assert len(transactions) == 10
-assert completed == 9 and failed == 1
-assert len(queue._transaction_queue) == 0
-
-print("PASS: 10 транзакций обработаны, ожидаемые статусы получены")
-
-
-new = Risk_analyzer.AuditLog()
-#print (transactions[2][2].get_transaction_data())
-new.add_transation_to_log(transaction=transactions[2][2], risk_level='high')
-
-print(new._audit_log[0])
+    print(f"Записей восстановлено из JSON: {len(history)}")
+    print("\nPASS: все проверки анализатора рисков пройдены")
