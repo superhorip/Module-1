@@ -297,15 +297,10 @@ class TransactionProcessor:
             if transaction._transaction_type == 'transfer':
                 need_currency_conversion = self.validate_currency_convertion(transaction=transaction, bank=bank_obj)
                 dont_need_extra_fee = False
-                if bank_obj._all_bank_accounts[transaction._sender_acc_id].get_account_info()['type'] == 'PremiumBankAccount':
-                    dont_need_extra_fee = True
-                    self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
-                                        currency_convertr=currency_convertr, bank_fee=0)                
-                if not dont_need_extra_fee:
-                    bank_fee = self.calculate_bank_fee(transaction=transaction,bank=bank_obj, currency_convertr=currency_convertr)
-                    transaction._transfer_fee = self.COMMISSION_FEE * transaction._amount
-                    self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
-                                        currency_convertr=currency_convertr, bank_fee=bank_fee)
+                bank_fee = self.calculate_bank_fee(transaction=transaction,bank=bank_obj, currency_convertr=currency_convertr)
+                transaction._transfer_fee = self.COMMISSION_FEE * transaction._amount
+                self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
+                                    currency_convertr=currency_convertr, bank_fee=bank_fee)
             if transaction._transaction_type == 'withdraw':
                 need_currency_conversion = self.validate_currency_convertion(transaction=transaction, bank=bank_obj)
                 dont_need_extra_fee = True
@@ -321,6 +316,10 @@ class TransactionProcessor:
             transaction._failure_reason = f'Operation failed: {e}'
             if transaction._status != 'failed':
                 transaction.change_transaction_status(status='failed')
+        if transaction._status == 'failed' and transaction._retry_count < transaction.MAX_RETRIES:
+                self.retry_transaction(transaction=transaction, transaction_queue=transaction_queue, priority='2')
+            
+
 
 
 
@@ -488,24 +487,24 @@ class TransactionProcessor:
         
         pass
 
-def retry_transaction(self,  transaction: Transaction, transaction_queue: TransactionQueue, priority: str = "2") -> None:
+    def retry_transaction(self,  transaction: Transaction, transaction_queue: TransactionQueue, priority: str = "2") -> None:
 
-    if not isinstance(transaction, Transaction):
-        raise BA.InvalidOperationError("Not a Transaction object")
+        if not isinstance(transaction, Transaction):
+            raise BA.InvalidOperationError("Not a Transaction object")
 
-    if not isinstance(transaction_queue, TransactionQueue):
-        raise BA.InvalidOperationError("Not a TransactionQueue object")
+        if not isinstance(transaction_queue, TransactionQueue):
+            raise BA.InvalidOperationError("Not a TransactionQueue object")
 
-    if transaction._status != "failed":
-        raise BA.InvalidOperationError("Only failed transactions can be retried")
+        if transaction._status != "failed":
+            raise BA.InvalidOperationError("Only failed transactions can be retried")
 
-    if transaction._retry_count >= transaction.MAX_RETRIES:
-        raise BA.InvalidOperationError("Maximum retries exceeded")
+        if transaction._retry_count >= transaction.MAX_RETRIES:
+            raise BA.InvalidOperationError("Maximum retries exceeded")
 
-    transaction.change_transaction_status("pending")
-    transaction_queue.add_transaction(transaction_obj=transaction,  prioprity=priority, sheduled_at=datetime.now() )
-    transaction._retry_count += 1
-    transaction._failure_reason = None
+        transaction.change_transaction_status("pending")
+        transaction_queue.add_transaction(transaction_obj=transaction,  prioprity=priority, sheduled_at=datetime.now() )
+        transaction._retry_count += 1
+        transaction._failure_reason = None
 
 
 
