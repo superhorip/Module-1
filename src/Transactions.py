@@ -289,7 +289,7 @@ class TransactionProcessor:
         if transaction_risk not in self.VALID_RISKS_LEVELS:
             raise BA.InvalidOperationError('Not such risk level')
         if transaction_risk == 'HIGH':
-            BA.InvalidOperationError('High risk_transaction. Processing stopped')
+            raise BA.InvalidOperationError('High risk_transaction. Processing stopped')
             transaction.change_transaction_status(status='failed')
 
 
