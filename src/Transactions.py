@@ -292,7 +292,7 @@ class TransactionProcessor:
             transaction.change_transaction_status(status='failed')
             transaction._failure_reason = 'High risk transaction'
             risk_analyser._audit_log.add_transation_to_log(transaction=transaction, risk_level=transaction_risk)
-            raise BA.InvalidOperationError('High risk_transaction. Processing stopped')
+            return #raise BA.InvalidOperationError('High risk_transaction. Processing stopped')
 
 
         try:
