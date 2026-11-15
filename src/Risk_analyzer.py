@@ -28,17 +28,16 @@ class AuditLog:
         p = Path(file_name)
         if p.is_file():
             self.read_log_from_disk(file_name=file_name)
+        self._file_name = file_name
         
 
-    def add_transation_to_log(self, transaction: "Transactions.Transaction", risk_level: str, file_name: str) -> None:
+    def add_transation_to_log(self, transaction: "Transactions.Transaction", risk_level: str) -> None:
         if not isinstance(risk_level, str):
-            raise BA.InvalidOperationError("Wrong type")
-        if not isinstance(file_name, str):
-            raise BA.InvalidOperationError("Wrong type")        
+            raise BA.InvalidOperationError("Wrong type")       
         transaction_dict = transaction.get_transaction_data()
         transaction_dict["risk_level"] = risk_level
         self._audit_log.append(transaction_dict)
-        self.write_log_to_disk(file_name=file_name)
+        self.write_log_to_disk(file_name=self._file_name)
 
     def get_client_transaction_history(self, client_id: str) -> list:
         """returns all transaction logs by client_id"""
@@ -100,7 +99,25 @@ class AuditLog:
             raise BA.InvalidOperationError("Wrong type")          
         with open(file_name, 'w', encoding='utf-8') as file:
             json.dump(self._audit_log, file, indent=4, default=str)
-        
+
+    def make_failures_count(self) -> tuple[int, dict]:
+        """Фильтрует журнал и возвращает количество операций с ошибками"""
+
+        failure_reasons = {}
+
+        for audit_note in self._audit_log:
+            if audit_note['Transaction status'] != 'failed':
+                continue
+            failure_reason = audit_note['Failure reason']
+            if failure_reason not in failure_reasons.keys():
+                failure_reasons[failure_reason] = 1
+            else:
+                failure_reasons[failure_reason] = failure_reasons[failure_reason] + 1
+        total_faileres_num = sum(failure_reasons.values())
+        return total_faileres_num, failure_reasons
+
+
+    
         
 
 

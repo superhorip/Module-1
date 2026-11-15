@@ -78,10 +78,11 @@ with TemporaryDirectory() as folder:
             sender_id=alice,
             sender_acc_id=alice_acc
         )
+
         t._status = "completed"
         t._processing_time = datetime.now() - timedelta(seconds=1)
 
-        log.add_transation_to_log(t, "LOW", filename)
+        log.add_transation_to_log(t, "LOW")
 
     count = analyzer.evaluate_max_per_10_min_ops(alice)
     print(f"Операций за 10 минут: {count}")
@@ -94,7 +95,16 @@ with TemporaryDirectory() as folder:
         "HIGH"
     )
 
-    # 5. Проверяем восстановление журнала из JSON
+    # 5. Проверяем статистику ошибок
+    failed_count, failure_reasons = log.make_failures_count()
+
+    print(f"Количество ошибок: {failed_count}")
+    print(f"Причины ошибок: {failure_reasons}")
+
+    assert failed_count == 0
+    assert failure_reasons == {}
+
+    # 6. Проверяем восстановление журнала из JSON
     restored_log = AuditLog(filename)
     history = restored_log.get_client_transaction_history(alice)
 
