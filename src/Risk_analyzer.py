@@ -31,11 +31,23 @@ class AuditLog:
         self._file_name = file_name
         
 
-    def add_transation_to_log(self, transaction: "Transactions.Transaction", risk_level: str) -> None:
+    def add_transation_to_log(self, transaction: "Transactions.Transaction", risk_level: str, bank_obj: Bank.Bank) -> None:
         if not isinstance(risk_level, str):
             raise BA.InvalidOperationError("Wrong type")       
         transaction_dict = transaction.get_transaction_data()
         transaction_dict["risk_level"] = risk_level
+
+        if transaction._status == "completed":
+            if transaction._sender_acc_id is not None:
+                transaction_dict["Sender_balance_after"] = (
+                    bank_obj._all_bank_accounts[transaction._sender_acc_id]._balance
+                )
+
+            if transaction._recipient_acc_id is not None:
+                transaction_dict["Recipient_balance_after"] = (
+                    bank_obj._all_bank_accounts[transaction._recipient_acc_id]._balance
+                )
+
         self._audit_log.append(transaction_dict)
         self.write_log_to_disk(file_name=self._file_name)
 

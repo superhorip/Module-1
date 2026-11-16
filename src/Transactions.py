@@ -291,7 +291,7 @@ class TransactionProcessor:
         if transaction_risk == 'HIGH':
             transaction.change_transaction_status(status='failed')
             transaction._failure_reason = 'High risk transaction'
-            risk_analyser._audit_log.add_transation_to_log(transaction=transaction, risk_level=transaction_risk)
+            risk_analyser._audit_log.add_transation_to_log(transaction=transaction, risk_level=transaction_risk, bank_obj=bank_obj)
             return #raise BA.InvalidOperationError('High risk_transaction. Processing stopped')
 
 
@@ -313,13 +313,13 @@ class TransactionProcessor:
                 dont_need_extra_fee = True
                 self.execute_transfer(transaction=transaction, bank_obj=bank_obj, need_corrency_conversion=need_currency_conversion, dont_need_extra_fee=dont_need_extra_fee,
                                         currency_convertr=currency_convertr, bank_fee=0)
-            risk_analyser._audit_log.add_transation_to_log(transaction=transaction, risk_level=transaction_risk)
+            risk_analyser._audit_log.add_transation_to_log(transaction=transaction, risk_level=transaction_risk, bank_obj=bank_obj)
         except (BA.InvalidOperationError, BA.AccountClosedError, BA.AccountFrozenError, BA.InsufficientFundsError) as e:
             print (f'Operation failed: {e}')
             transaction._failure_reason = f'Operation failed: {e}'
             if transaction._status != 'failed':
                 transaction.change_transaction_status(status='failed')
-            risk_analyser._audit_log.add_transation_to_log(transaction=transaction, risk_level=transaction_risk)
+            risk_analyser._audit_log.add_transation_to_log(transaction=transaction, risk_level=transaction_risk, bank_obj=bank_obj)
         if transaction._status == 'failed' and transaction._retry_count < transaction.MAX_RETRIES:
                 self.retry_transaction(transaction=transaction, transaction_queue=transaction_queue, priority='2')
             

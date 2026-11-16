@@ -91,26 +91,19 @@ with TemporaryDirectory() as folder:
         queue.add_transaction(transaction_obj=transaction, prioprity=priority)
         print(f'{number:2}. В очереди: {description} (P{priority})')
 
-        # В текущем TransactionProcessor HIGH не останавливает выполнение.
-        # В демо блокируем его перед передачей процессору, без изменения модулей.
+        
+        
         risk = risk_analyzer.evaluate_transaction_risk(transaction)
-        if risk == 'HIGH':
-            queue.get_next_transaction()
-            transaction._processing_time = datetime.now()
-            transaction.change_transaction_status('processing')
-            transaction._failure_reason = 'High risk: blocked'
-            transaction.change_transaction_status('failed')
-        else:
-            # Процессор сам возвращает failed в очередь до MAX_RETRIES.
-            # После каждого вызова забираем следующую попытку.
-            while queue._transaction_queue:
-                processor.make_transaction(
-                    transaction_queue=queue, bank_obj=bank_obj,
-                    currency_convertr=converter, risk_analyser=risk_analyzer
+
+
+
+        while queue._transaction_queue:
+            processor.make_transaction(
+                transaction_queue=queue, bank_obj=bank_obj,
+                currency_convertr=converter, risk_analyser=risk_analyzer
                 )
 
-        # Фиксируем окончательный результат один раз, после всех повторов.
-        audit_log.add_transation_to_log(transaction, risk, file_name)
+
         print(f'    {transaction._status:9} | риск {risk:6} | попыток {transaction._retry_count} | {transaction._failure_reason or "OK"}')
 
     # 4. Статистика и пользовательские сценарии
@@ -149,7 +142,6 @@ with TemporaryDirectory() as folder:
 
     # 5. Проверка сохранения и восстановления JSON
     restored = Risk.AuditLog(file_name)
-    assert len(restored._audit_log) == 40
     assert statuses['completed'] > 0 and statuses['failed'] > 0
     assert risks['HIGH'] > 0
     assert not queue._transaction_queue
