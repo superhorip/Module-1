@@ -151,4 +151,41 @@ class ReportBuilder():
         client_balance = self._bank_obj.get_total_balance(client_id, all_bank_clients=False)
         file_name = f'Client_json_balance_{client_id}_{timestamp}.json'        
         with open(self._report_path / file_name, 'w', encoding='utf-8') as file:
-            json.dump(client_balance, file, indent=4, default=str)            
+            json.dump(client_balance, file, indent=4, default=str)
+
+
+    def export_to_txt(self, client_id: str) -> None:
+        BA.validate_string(string=client_id, field_name='Client ID')
+
+        client_balance = self._bank_obj.get_total_balance(
+            client_id, all_bank_clients=False
+        )
+        bank_balance = self._bank_obj.get_total_balance(
+            all_bank_clients=True
+        )
+        risks = self._risk_analyzer_obj._audit_log.make_client_risk_profile(
+            client_id=client_id
+        )
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        file_name = f'Client_text_report_{client_id}_{timestamp}.txt'
+        file_path = self._report_path / file_name
+
+        with open(file_path, 'w', encoding='utf-8') as file:
+            file.write(f'CLIENT REPORT: {client_id}\n\n')
+
+            file.write('CLIENT BALANCES:\n')
+            for currency, balance in client_balance.items():
+                file.write(f'{currency}: {balance:.2f}\n')
+
+            file.write('\nBANK BALANCES:\n')
+            for currency, balance in bank_balance.items():
+                file.write(f'{currency}: {balance:.2f}\n')
+
+            file.write('\nRISK STATISTICS:\n')
+            file.write(f"Total operations: {risks['Total ops number']}\n")
+            file.write(
+                f"Medium and high risk: "
+                f"{risks['Mid and high level ops number']}\n"
+            )
+    

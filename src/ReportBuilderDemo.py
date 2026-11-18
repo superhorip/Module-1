@@ -211,6 +211,7 @@ with TemporaryDirectory() as folder:
 
     reports.export_to_csv(clients['Alice'])
     reports.export_to_json(clients['Alice'])
+    reports.export_to_txt(clients['Alice'])
 
 
     # 8. Проверяем создание файлов
@@ -221,7 +222,8 @@ with TemporaryDirectory() as folder:
         f'client_risk_profile_{clients["Alice"]}_*.png',
         f'balance_{accounts["Alice"]["RUB"]}_*.png',
         f'Client_csv_balance_{clients["Alice"]}_*.csv',
-        f'Client_json_balance_{clients["Alice"]}_*.json'
+        f'Client_json_balance_{clients["Alice"]}_*.json',
+        f'Client_text_report_{clients["Alice"]}_*.txt'
     ]
 
     files = []
